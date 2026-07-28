@@ -1,8 +1,8 @@
 class ApiConfig {
-  // Replace with your live Render backend URL after deployment
+  // Production Render Backend Endpoint
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://careerforge-ai-backend.onrender.com/api',
+    defaultValue: 'https://careerforge-ai-2bbv.onrender.com/api',
   );
 
   static const String healthEndpoint = '$baseUrl/health';
