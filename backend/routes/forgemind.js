@@ -12,6 +12,39 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 },
 });
 
+let chatDbInitialized = false;
+
+function initChatDb() {
+  if (chatDbInitialized) return;
+  try {
+    execute(`
+      CREATE TABLE IF NOT EXISTS forgemind_conversations (
+        id TEXT PRIMARY KEY,
+        student_id INTEGER,
+        title TEXT,
+        pinned INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    execute(`
+      CREATE TABLE IF NOT EXISTS forgemind_messages (
+        id TEXT PRIMARY KEY,
+        conversation_id TEXT,
+        sender TEXT,
+        text TEXT,
+        file_name TEXT,
+        agent_details TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    chatDbInitialized = true;
+  } catch (e) {
+    console.warn('[ForgeMind DB Init Note]', e.message);
+  }
+}
+
 async function extractText(buffer, mimeType, name = '') {
   const ext = name.split('.').pop().toLowerCase();
   if (mimeType === 'application/pdf' || ext === 'pdf') {
@@ -25,11 +58,12 @@ async function extractText(buffer, mimeType, name = '') {
 }
 
 // ── GET Conversations List ────────────────────────────────────────────────
-router.get('/:studentId/conversations', async (req, res) => {
+router.get('/:studentId/conversations', (req, res) => {
   try {
+    initChatDb();
     const { studentId } = req.params;
-    const rows = await queryAll(
-      'SELECT * FROM forgemind_conversations WHERE student_id = $1 ORDER BY pinned DESC, updated_at DESC',
+    const rows = queryAll(
+      'SELECT * FROM forgemind_conversations WHERE student_id = ? ORDER BY pinned DESC, updated_at DESC',
       [studentId]
     );
     res.json(rows);
@@ -39,16 +73,17 @@ router.get('/:studentId/conversations', async (req, res) => {
 });
 
 // ── GET Conversation Messages ─────────────────────────────────────────────
-router.get('/messages/:conversationId', async (req, res) => {
+router.get('/messages/:conversationId', (req, res) => {
   try {
+    initChatDb();
     const { conversationId } = req.params;
-    const rows = await queryAll(
-      'SELECT * FROM forgemind_messages WHERE conversation_id = $1 ORDER BY created_at ASC',
+    const rows = queryAll(
+      'SELECT * FROM forgemind_messages WHERE conversation_id = ? ORDER BY created_at ASC',
       [conversationId]
     );
     const parsed = rows.map(r => ({
       ...r,
-      agentDetails: r.agent_details ? (typeof r.agent_details === 'string' ? JSON.parse(r.agent_details) : r.agent_details) : null
+      agentDetails: r.agent_details ? JSON.parse(r.agent_details) : null
     }));
     res.json(parsed);
   } catch (e) {
@@ -59,6 +94,7 @@ router.get('/messages/:conversationId', async (req, res) => {
 // ── POST Send Chat Message (Main Orchestrator Entrypoint) ───────────────────
 router.post('/:studentId/chat', upload.single('file'), async (req, res) => {
   try {
+    initChatDb();
     const { studentId } = req.params;
     const userQuery = req.body.query || 'Hello';
     let conversationId = req.body.conversationId;
@@ -76,23 +112,23 @@ router.post('/:studentId/chat', upload.single('file'), async (req, res) => {
     if (!conversationId || conversationId === 'new') {
       conversationId = `conv_${Date.now()}`;
       const titleSnippet = userQuery.length > 28 ? `${userQuery.substring(0, 28)}...` : userQuery;
-      await execute(
-        `INSERT INTO forgemind_conversations (id, student_id, title) VALUES ($1, $2, $3)`,
+      execute(
+        `INSERT INTO forgemind_conversations (id, student_id, title) VALUES (?, ?, ?)`,
         [conversationId, studentId, titleSnippet || 'New Conversation']
       );
     } else {
-      await execute(`UPDATE forgemind_conversations SET updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [conversationId]);
+      execute(`UPDATE forgemind_conversations SET updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [conversationId]);
     }
 
     // Store User Message
     const userMsgId = `msg_user_${Date.now()}`;
-    await execute(
-      `INSERT INTO forgemind_messages (id, conversation_id, sender, text, file_name) VALUES ($1, $2, $3, $4, $5)`,
+    execute(
+      `INSERT INTO forgemind_messages (id, conversation_id, sender, text, file_name) VALUES (?, ?, ?, ?, ?)`,
       [userMsgId, conversationId, 'user', userQuery, fileName]
     );
 
     // Fetch Student Name
-    const studentObj = await queryOne('SELECT * FROM students WHERE id = $1', [studentId]);
+    const studentObj = queryOne('SELECT * FROM students WHERE id = ?', [studentId]);
     const studentName = studentObj ? studentObj.name : 'Candidate';
 
     // Orchestrate Multi-Agent Execution
@@ -106,8 +142,8 @@ router.post('/:studentId/chat', upload.single('file'), async (req, res) => {
 
     // Store Agent Message
     const agentMsgId = `msg_agent_${Date.now()}`;
-    await execute(
-      `INSERT INTO forgemind_messages (id, conversation_id, sender, text, agent_details) VALUES ($1, $2, $3, $4, $5)`,
+    execute(
+      `INSERT INTO forgemind_messages (id, conversation_id, sender, text, agent_details) VALUES (?, ?, ?, ?, ?)`,
       [agentMsgId, conversationId, 'agent', result.markdownResponse, JSON.stringify(result.agentOutputs)]
     );
 
@@ -126,11 +162,11 @@ router.post('/:studentId/chat', upload.single('file'), async (req, res) => {
 });
 
 // ── DELETE Conversation ───────────────────────────────────────────────────
-router.delete('/conversations/:conversationId', async (req, res) => {
+router.delete('/conversations/:conversationId', (req, res) => {
   try {
     const { conversationId } = req.params;
-    await execute('DELETE FROM forgemind_conversations WHERE id = $1', [conversationId]);
-    await execute('DELETE FROM forgemind_messages WHERE conversation_id = $1', [conversationId]);
+    execute('DELETE FROM forgemind_conversations WHERE id = ?', [conversationId]);
+    execute('DELETE FROM forgemind_messages WHERE conversation_id = ?', [conversationId]);
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -138,12 +174,12 @@ router.delete('/conversations/:conversationId', async (req, res) => {
 });
 
 // ── POST Pin/Unpin Conversation ───────────────────────────────────────────
-router.post('/conversations/:conversationId/pin', async (req, res) => {
+router.post('/conversations/:conversationId/pin', (req, res) => {
   try {
     const { conversationId } = req.params;
-    const existing = await queryOne('SELECT pinned FROM forgemind_conversations WHERE id = $1', [conversationId]);
+    const existing = queryOne('SELECT pinned FROM forgemind_conversations WHERE id = ?', [conversationId]);
     const nextPinned = existing && existing.pinned ? 0 : 1;
-    await execute('UPDATE forgemind_conversations SET pinned = $1 WHERE id = $2', [nextPinned, conversationId]);
+    execute('UPDATE forgemind_conversations SET pinned = ? WHERE id = ?', [nextPinned, conversationId]);
     res.json({ success: true, pinned: Boolean(nextPinned) });
   } catch (e) {
     res.status(500).json({ error: e.message });

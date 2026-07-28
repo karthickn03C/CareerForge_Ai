@@ -1,171 +1,122 @@
 import 'package:flutter/material.dart';
 
 void main() {
-  runApp(const CareerForgeApp());
+  runApp(const MyApp());
 }
 
-class CareerForgeApp extends StatelessWidget {
-  const CareerForgeApp({super.key});
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
 
+  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'CareerForge AI',
-      debugShowCheckedModeBanner: false,
+      title: 'Flutter Demo',
       theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF4F46E5),
-          brightness: Brightness.light,
-        ),
+        // This is the theme of your application.
+        //
+        // TRY THIS: Try running your application with "flutter run". You'll see
+        // the application has a purple toolbar. Then, without quitting the app,
+        // try changing the seedColor in the colorScheme below to Colors.green
+        // and then invoke "hot reload" (save your changes or press the "hot
+        // reload" button in a Flutter-supported IDE, or press "r" if you used
+        // the command line to start the app).
+        //
+        // Notice that the counter didn't reset back to zero; the application
+        // state is not lost during the reload. To reset the state, use hot
+        // restart instead.
+        //
+        // This works for code too, not just values: Most code changes can be
+        // tested with just a hot reload.
+        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
       ),
-      darkTheme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF6366F1),
-          brightness: Brightness.dark,
-        ),
-      ),
-      home: const MainNavigationScreen(),
+      home: const MyHomePage(title: 'Flutter Demo Home Page'),
     );
   }
 }
 
-class MainNavigationScreen extends StatefulWidget {
-  const MainNavigationScreen({super.key});
+class MyHomePage extends StatefulWidget {
+  const MyHomePage({super.key, required this.title});
+
+  // This widget is the home page of your application. It is stateful, meaning
+  // that it has a State object (defined below) that contains fields that affect
+  // how it looks.
+
+  // This class is the configuration for the state. It holds the values (in this
+  // case the title) provided by the parent (in this case the App widget) and
+  // used by the build method of the State. Fields in a Widget subclass are
+  // always marked "final".
+
+  final String title;
 
   @override
-  State<MainNavigationScreen> createState() => _MainNavigationScreenState();
+  State<MyHomePage> createState() => _MyHomePageState();
 }
 
-class _MainNavigationScreenState extends State<MainNavigationScreen> {
-  int _currentIndex = 0;
+class _MyHomePageState extends State<MyHomePage> {
+  int _counter = 0;
 
-  final List<Widget> _screens = const [
-    ForgeMindScreen(),
-    ProgressScreen(),
-    PracticeScreen(),
-    InterviewScreen(),
-    PlanScreen(),
-    ResumeScreen(),
-    OpportunitiesScreen(),
-  ];
-
-  final List<String> _titles = const [
-    'ForgeMind AI',
-    'My Progress',
-    'Practice',
-    'Mock Interview',
-    'My Plan',
-    'Resume Analyzer',
-    'Opportunity Discovery',
-  ];
+  void _incrementCounter() {
+    setState(() {
+      // This call to setState tells the Flutter framework that something has
+      // changed in this State, which causes it to rerun the build method below
+      // so that the display can reflect the updated values. If we changed
+      // _counter without calling setState(), then the build method would not be
+      // called again, and so nothing would appear to happen.
+      _counter++;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    // This method is rerun every time setState is called, for instance as done
+    // by the _incrementCounter method above.
+    //
+    // The Flutter framework has been optimized to make rerunning build methods
+    // fast, so that you can just rebuild anything that needs updating rather
+    // than having to individually change instances of widgets.
     return Scaffold(
       appBar: AppBar(
-        title: Text(_titles[_currentIndex], style: const TextStyle(fontWeight: FontWeight.bold)),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Connected to Live Render REST API (Guest Mode)')),
-              );
-            },
-          ),
-        ],
+        // TRY THIS: Try changing the color here to a specific color (to
+        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
+        // change color while the other colors stay the same.
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        // Here we take the value from the MyHomePage object that was created by
+        // the App.build method, and use it to set our appbar title.
+        title: Text(widget.title),
       ),
-      drawer: NavigationDrawer(
-        selectedIndex: _currentIndex,
-        onDestinationSelected: (idx) {
-          setState(() => _currentIndex = idx);
-          Navigator.pop(context);
-        },
-        children: const [
-          Padding(
-            padding: EdgeInsets.fromLTRB(28, 16, 16, 10),
-            child: Text('CareerForge AI', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF4F46E5))),
-          ),
-          NavigationDrawerDestination(icon: Icon(Icons.psychology), label: Text('ForgeMind AI')),
-          NavigationDrawerDestination(icon: Icon(Icons.bar_chart), label: Text('My Progress')),
-          NavigationDrawerDestination(icon: Icon(Icons.code), label: Text('Practice')),
-          NavigationDrawerDestination(icon: Icon(Icons.record_voice_over), label: Text('Mock Interview')),
-          NavigationDrawerDestination(icon: Icon(Icons.calendar_today), label: Text('My Plan')),
-          NavigationDrawerDestination(icon: Icon(Icons.description), label: Text('Resume Analyzer')),
-          NavigationDrawerDestination(icon: Icon(Icons.explore), label: Text('Opportunity Discovery')),
-        ],
+      body: Center(
+        // Center is a layout widget. It takes a single child and positions it
+        // in the middle of the parent.
+        child: Column(
+          // Column is also a layout widget. It takes a list of children and
+          // arranges them vertically. By default, it sizes itself to fit its
+          // children horizontally, and tries to be as tall as its parent.
+          //
+          // Column has various properties to control how it sizes itself and
+          // how it positions its children. Here we use mainAxisAlignment to
+          // center the children vertically; the main axis here is the vertical
+          // axis because Columns are vertical (the cross axis would be
+          // horizontal).
+          //
+          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
+          // action in the IDE, or press "p" in the console), to see the
+          // wireframe for each widget.
+          mainAxisAlignment: .center,
+          children: [
+            const Text('You have pushed the button this many times:'),
+            Text(
+              '$_counter',
+              style: Theme.of(context).textTheme.headlineMedium,
+            ),
+          ],
+        ),
       ),
-      body: _screens[_currentIndex],
-      bottomNavigationBar: MediaQuery.of(context).size.width < 600
-          ? NavigationBar(
-              selectedIndex: _currentIndex > 3 ? 0 : _currentIndex,
-              onDestinationSelected: (idx) => setState(() => _currentIndex = idx),
-              destinations: const [
-                NavigationDestination(icon: Icon(Icons.psychology), label: 'ForgeMind'),
-                NavigationDestination(icon: Icon(Icons.bar_chart), label: 'Progress'),
-                NavigationDestination(icon: Icon(Icons.code), label: 'Practice'),
-                NavigationDestination(icon: Icon(Icons.record_voice_over), label: 'Interview'),
-              ],
-            )
-          : null,
+      floatingActionButton: FloatingActionButton(
+        onPressed: _incrementCounter,
+        tooltip: 'Increment',
+        child: const Icon(Icons.add),
+      ),
     );
-  }
-}
-
-class ForgeMindScreen extends StatelessWidget {
-  const ForgeMindScreen({super.key});
-  @override
-  Widget build(BuildContext context) {
-    return const Center(child: Text('ForgeMind AI Multi-Agent Orchestrator'));
-  }
-}
-
-class ProgressScreen extends StatelessWidget {
-  const ProgressScreen({super.key});
-  @override
-  Widget build(BuildContext context) {
-    return const Center(child: Text('My Progress & Dashboard'));
-  }
-}
-
-class PracticeScreen extends StatelessWidget {
-  const PracticeScreen({super.key});
-  @override
-  Widget build(BuildContext context) {
-    return const Center(child: Text('Coding Practice Engine'));
-  }
-}
-
-class InterviewScreen extends StatelessWidget {
-  const InterviewScreen({super.key});
-  @override
-  Widget build(BuildContext context) {
-    return const Center(child: Text('AI Interview Simulator'));
-  }
-}
-
-class PlanScreen extends StatelessWidget {
-  const PlanScreen({super.key});
-  @override
-  Widget build(BuildContext context) {
-    return const Center(child: Text('Study Roadmap & Plan'));
-  }
-}
-
-class ResumeScreen extends StatelessWidget {
-  const ResumeScreen({super.key});
-  @override
-  Widget build(BuildContext context) {
-    return const Center(child: Text('Resume Analyzer'));
-  }
-}
-
-class OpportunitiesScreen extends StatelessWidget {
-  const OpportunitiesScreen({super.key});
-  @override
-  Widget build(BuildContext context) {
-    return const Center(child: Text('Opportunity Discovery'));
   }
 }

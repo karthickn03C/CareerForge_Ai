@@ -5,15 +5,15 @@ const { askQuestion, evaluateAnswer } = require('../agents/interviewAgent');
 const { getWeakestTopic } = require('../agents/progressAgent');
 
 // GET all interview sessions for a student
-router.get('/:studentId', async (req, res) => {
-  const sessions = await queryAll(
-    'SELECT * FROM interview_sessions WHERE student_id = $1 ORDER BY created_at DESC',
+router.get('/:studentId', (req, res) => {
+  const sessions = queryAll(
+    'SELECT * FROM interview_sessions WHERE student_id = ? ORDER BY created_at DESC',
     [req.params.studentId]
   );
   const parsed = sessions.map((s) => ({
     ...s,
-    strengths: typeof s.strengths === 'string' ? JSON.parse(s.strengths || '[]') : s.strengths || [],
-    gaps: typeof s.gaps === 'string' ? JSON.parse(s.gaps || '[]') : s.gaps || [],
+    strengths: s.strengths ? JSON.parse(s.strengths) : [],
+    gaps: s.gaps ? JSON.parse(s.gaps) : [],
   }));
   res.json(parsed);
 });
@@ -25,8 +25,8 @@ router.post('/:studentId/start', async (req, res) => {
   const targetDifficulty = difficulty || 'intermediate';
 
   if (!targetTopic && mode !== 'hr') {
-    const entries = await queryAll(
-      'SELECT * FROM progress_entries WHERE student_id = $1',
+    const entries = queryAll(
+      'SELECT * FROM progress_entries WHERE student_id = ?',
       [req.params.studentId]
     );
     const weakest = getWeakestTopic(entries);
@@ -36,13 +36,13 @@ router.post('/:studentId/start', async (req, res) => {
   try {
     const result = await askQuestion(targetTopic || 'General', mode || 'technical', targetDifficulty);
 
-    const inserted = await queryOne(
-      `INSERT INTO interview_sessions (student_id, mode, question) VALUES ($1, $2, $3) RETURNING *`,
+    const inserted = execute(
+      `INSERT INTO interview_sessions (student_id, mode, question) VALUES (?, ?, ?)`,
       [req.params.studentId, mode || 'technical', result.question]
     );
 
     res.status(201).json({
-      id: inserted.id,
+      id: inserted.lastInsertRowid,
       student_id: parseInt(req.params.studentId),
       topic: targetTopic,
       mode: mode || 'technical',
@@ -60,8 +60,8 @@ router.post('/session/:sessionId/answer', async (req, res) => {
   const { student_answer, topic, difficulty } = req.body;
   if (!student_answer) return res.status(400).json({ error: 'student_answer is required' });
 
-  const session = await queryOne(
-    'SELECT * FROM interview_sessions WHERE id = $1',
+  const session = queryOne(
+    'SELECT * FROM interview_sessions WHERE id = ?',
     [req.params.sessionId]
   );
   if (!session) return res.status(404).json({ error: 'Session not found' });
@@ -75,8 +75,8 @@ router.post('/session/:sessionId/answer', async (req, res) => {
       difficulty || 'intermediate'
     );
 
-    await execute(
-      `UPDATE interview_sessions SET student_answer = $1, score = $2, strengths = $3, gaps = $4, better_answer = $5 WHERE id = $6`,
+    execute(
+      `UPDATE interview_sessions SET student_answer = ?, score = ?, strengths = ?, gaps = ?, better_answer = ? WHERE id = ?`,
       [
         student_answer,
         evaluation.score,
@@ -87,21 +87,27 @@ router.post('/session/:sessionId/answer', async (req, res) => {
       ]
     );
 
-    const updated = await queryOne(
-      'SELECT * FROM interview_sessions WHERE id = $1',
+    const updated = queryOne(
+      'SELECT * FROM interview_sessions WHERE id = ?',
       [req.params.sessionId]
     );
 
     res.json({
       ...updated,
       evaluation,
-      strengths: typeof updated.strengths === 'string' ? JSON.parse(updated.strengths || '[]') : updated.strengths || [],
-      gaps: typeof updated.gaps === 'string' ? JSON.parse(updated.gaps || '[]') : updated.gaps || [],
+      strengths: JSON.parse(updated.strengths || '[]'),
+      gaps: JSON.parse(updated.gaps || '[]'),
     });
   } catch (err) {
-    console.error('Interview answer error:', err.message);
+    console.error('Interview evaluation error:', err.message);
     res.status(500).json({ error: `Failed to evaluate answer: ${err.message}` });
   }
+});
+
+// DELETE interview session
+router.delete('/session/:sessionId', (req, res) => {
+  execute('DELETE FROM interview_sessions WHERE id = ?', [req.params.sessionId]);
+  res.json({ message: 'Session deleted' });
 });
 
 module.exports = router;

@@ -78,9 +78,9 @@ async function extractTextFromBuffer(buffer, file) {
 }
 
 // ── GET latest resume analysis ────────────────────────────────────
-router.get('/:studentId', async (req, res) => {
-  const record = await queryOne(
-    'SELECT * FROM resume_analyses WHERE student_id = $1 ORDER BY uploaded_at DESC LIMIT 1',
+router.get('/:studentId', (req, res) => {
+  const record = queryOne(
+    'SELECT * FROM resume_analyses WHERE student_id = ? ORDER BY uploaded_at DESC LIMIT 1',
     [req.params.studentId]
   );
 
@@ -93,9 +93,9 @@ router.get('/:studentId', async (req, res) => {
       file_name: record.file_name,
       file_type: record.file_type,
       raw_text: record.raw_text,
-      parsed_json: typeof record.parsed_json === 'string' ? JSON.parse(record.parsed_json) : record.parsed_json,
-      ats_scores: typeof record.ats_scores === 'string' ? JSON.parse(record.ats_scores) : record.ats_scores,
-      feedback_json: typeof record.feedback_json === 'string' ? JSON.parse(record.feedback_json) : record.feedback_json,
+      parsed_json: JSON.parse(record.parsed_json),
+      ats_scores: JSON.parse(record.ats_scores),
+      feedback_json: JSON.parse(record.feedback_json),
       uploaded_at: record.uploaded_at,
     });
   } catch (err) {
@@ -122,6 +122,7 @@ router.post('/:studentId/upload', upload.single('resume'), async (req, res) => {
       try {
         rawText = await extractTextFromBuffer(req.file.buffer, req.file);
       } catch (extractErr) {
+        // Return specific parsing error to frontend with 422 status
         return res.status(422).json({
           error: extractErr.message || 'Unable to read this PDF. Please upload a valid resume.',
           step: 'extraction',
@@ -133,6 +134,7 @@ router.post('/:studentId/upload', upload.single('resume'), async (req, res) => {
       return res.status(400).json({ error: 'Please upload a PDF, DOCX, or TXT file, or paste resume text.' });
     }
 
+    // Validate minimum text content
     if (!rawText || rawText.trim().length < 20) {
       return res.status(422).json({
         error: 'Could not extract enough text from the file. Please ensure the PDF is text-based and not an image scan.',
@@ -147,7 +149,7 @@ router.post('/:studentId/upload', upload.single('resume'), async (req, res) => {
       parsedData = await parseResumeWithAI(rawText);
     } catch (parseErr) {
       console.error('[POST /upload] AI parse error details:', parseErr);
-      return res.status(500).json({ error: parseErr.message || 'AI resume parsing failed.', step: 'ai_parse' });
+      return res.status(500).json({ error: parseErr.message || 'AI resume parsing failed.', step: 'ai_parse', details: process.env.NODE_ENV !== 'production' ? parseErr.stack : undefined });
     }
 
     // Step 3: ATS Scoring + Feedback
@@ -157,22 +159,22 @@ router.post('/:studentId/upload', upload.single('resume'), async (req, res) => {
       atsResult = await analyzeATSWithAI(parsedData);
     } catch (atsErr) {
       console.error('[POST /upload] ATS analysis error details:', atsErr);
-      return res.status(500).json({ error: atsErr.message || 'ATS analysis failed.', step: 'ats' });
+      return res.status(500).json({ error: atsErr.message || 'ATS analysis failed.', step: 'ats', details: process.env.NODE_ENV !== 'production' ? atsErr.stack : undefined });
     }
 
     const parsedJsonStr = JSON.stringify(parsedData);
     const atsScoresStr = JSON.stringify(atsResult.atsScores || {});
     const feedbackStr = JSON.stringify(atsResult.feedback || {});
 
-    // Step 4: Save to Database
-    const result = await queryOne(
+    // Step 4: Save to Database (always insert new record, most recent wins on GET)
+    const result = execute(
       `INSERT INTO resume_analyses (student_id, file_name, file_type, raw_text, parsed_json, ats_scores, feedback_json)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [studentId, fileName, fileType, rawText, parsedJsonStr, atsScoresStr, feedbackStr]
     );
 
     res.status(201).json({
-      id: result.id,
+      id: result.lastInsertRowid,
       student_id: studentId,
       file_name: fileName,
       file_type: fileType,
@@ -180,7 +182,7 @@ router.post('/:studentId/upload', upload.single('resume'), async (req, res) => {
       parsed_json: parsedData,
       ats_scores: atsResult.atsScores,
       feedback_json: atsResult.feedback,
-      uploaded_at: result.uploaded_at || new Date().toISOString(),
+      uploaded_at: new Date().toISOString(),
     });
 
   } catch (err) {
@@ -197,8 +199,8 @@ router.post('/:studentId/job-match', async (req, res) => {
       return res.status(400).json({ error: 'Job description is required.' });
     }
 
-    const record = await queryOne(
-      'SELECT * FROM resume_analyses WHERE student_id = $1 ORDER BY uploaded_at DESC LIMIT 1',
+    const record = queryOne(
+      'SELECT * FROM resume_analyses WHERE student_id = ? ORDER BY uploaded_at DESC LIMIT 1',
       [req.params.studentId]
     );
 
@@ -206,7 +208,7 @@ router.post('/:studentId/job-match', async (req, res) => {
       return res.status(400).json({ error: 'No resume found. Upload a resume first.' });
     }
 
-    const parsedResume = typeof record.parsed_json === 'string' ? JSON.parse(record.parsed_json) : record.parsed_json;
+    const parsedResume = JSON.parse(record.parsed_json);
     const matchResult = await matchJobDescription(parsedResume, jobDescription);
     res.json(matchResult);
   } catch (err) {
@@ -223,8 +225,8 @@ router.post('/:studentId/chat', async (req, res) => {
       return res.status(400).json({ error: 'Prompt is required.' });
     }
 
-    const record = await queryOne(
-      'SELECT * FROM resume_analyses WHERE student_id = $1 ORDER BY uploaded_at DESC LIMIT 1',
+    const record = queryOne(
+      'SELECT * FROM resume_analyses WHERE student_id = ? ORDER BY uploaded_at DESC LIMIT 1',
       [req.params.studentId]
     );
 
@@ -232,8 +234,8 @@ router.post('/:studentId/chat', async (req, res) => {
       return res.status(400).json({ error: 'No resume found. Upload a resume first.' });
     }
 
-    const parsedResume = typeof record.parsed_json === 'string' ? JSON.parse(record.parsed_json) : record.parsed_json;
-    const feedback = typeof record.feedback_json === 'string' ? JSON.parse(record.feedback_json) : record.feedback_json;
+    const parsedResume = JSON.parse(record.parsed_json);
+    const feedback = JSON.parse(record.feedback_json);
     const reply = await chatAboutResume(parsedResume, feedback, history || [], prompt);
     res.json({ reply });
   } catch (err) {
