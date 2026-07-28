@@ -10,10 +10,10 @@ let pool = null;
 function getPool() {
   if (!pool) {
     const connectionString = process.env.DATABASE_URL;
-    
+
     // Check if SSL is required (Neon & Cloud PG require SSL)
     const isProduction = process.env.NODE_ENV === 'production' || (connectionString && connectionString.includes('neon.tech'));
-    
+
     pool = new Pool({
       connectionString: connectionString || 'postgresql://postgres:postgres@localhost:5432/careerforge',
       ssl: isProduction ? { rejectUnauthorized: false } : false,
@@ -162,7 +162,7 @@ async function initDb() {
 
     console.log('✅ PostgreSQL Schema Initialized Successfully');
   } catch (err) {
-    console.error('❌ PostgreSQL Schema Initialization Error:', err.message);
+    console.error('❌ PostgreSQL Schema Initialization Error:', err);
   }
 }
 
