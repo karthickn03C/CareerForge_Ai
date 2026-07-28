@@ -5,54 +5,44 @@ const { queryAll, queryOne, execute } = require('../db/database');
 const { analyzeProgress } = require('../agents/progressAgent');
 
 // GET all progress entries for a student with analysis + verified totalSolved
-router.get('/:studentId', (req, res) => {
+router.get('/:studentId', async (req, res) => {
   const { studentId } = req.params;
 
-  const entries = queryAll(
-    'SELECT * FROM progress_entries WHERE student_id = ? ORDER BY date_added DESC',
+  const entries = await queryAll(
+    'SELECT * FROM progress_entries WHERE student_id = $1 ORDER BY date_added DESC',
     [studentId]
   );
 
   const analysis = analyzeProgress(entries);
 
-  // FIX 1: Use the verified LeetCode total stored on the student record.
-  // Never calculate "total solved" by summing per-topic entries — that always inflates.
-  const student = queryOne('SELECT leetcode_total_solved FROM students WHERE id = ?', [studentId]);
+  const student = await queryOne('SELECT leetcode_total_solved FROM students WHERE id = $1', [studentId]);
   const totalSolved = student?.leetcode_total_solved || 0;
 
   res.json({ entries, analysis, totalSolved });
 });
 
 // POST add a progress entry manually (non-LeetCode, always additive)
-router.post('/:studentId', (req, res) => {
+router.post('/:studentId', async (req, res) => {
   const { topic, platform, problems_solved } = req.body;
   if (!topic || !platform || problems_solved === undefined) {
     return res.status(400).json({ error: 'topic, platform, and problems_solved are required' });
   }
 
-  // Manual entries: plain INSERT (allow duplicates per the spec — user can add multiple manual entries for the same topic)
-  const result = execute(
-    'INSERT INTO progress_entries (student_id, topic, platform, problems_solved) VALUES (?, ?, ?, ?)',
+  const entry = await queryOne(
+    'INSERT INTO progress_entries (student_id, topic, platform, problems_solved) VALUES ($1, $2, $3, $4) RETURNING *',
     [req.params.studentId, topic, platform, parseInt(problems_solved)]
   );
 
-  const entry = queryOne('SELECT * FROM progress_entries WHERE id = ?', [result.lastInsertRowid]);
   res.status(201).json(entry);
 });
 
 // DELETE a progress entry
-router.delete('/entry/:id', (req, res) => {
-  execute('DELETE FROM progress_entries WHERE id = ?', [req.params.id]);
+router.delete('/entry/:id', async (req, res) => {
+  await execute('DELETE FROM progress_entries WHERE id = $1', [req.params.id]);
   res.json({ message: 'Entry deleted' });
 });
 
 // ── Core LeetCode Fetch & Save ────────────────────────────────────────────────
-/**
- * Fetches real LeetCode stats (total + per-tag) for a username and saves them.
- * FIX 2: Uses tagProblemCounts for real per-topic data (not fabricated).
- * FIX 3: Uses INSERT OR REPLACE (upsert) keyed on (student_id, platform, topic) — no duplicates ever.
- * FIX 1: Saves allEntry.count into students.leetcode_total_solved for accurate "Total Solved" display.
- */
 async function fetchAndSaveLeetCodeStats(studentId, username) {
   const query = `
     query userProblemsSolved($username: String!) {
@@ -93,27 +83,20 @@ async function fetchAndSaveLeetCodeStats(studentId, username) {
   const { submitStats, tagProblemCounts } = data.data.matchedUser;
   const acSubmissionNum = submitStats?.acSubmissionNum || [];
 
-  // ── FIX 1: Extract VERIFIED total from acSubmissionNum "All" ──────────────
   const allEntry    = acSubmissionNum.find(e => e.difficulty === 'All')    || { count: 0, submissions: 0 };
   const easyEntry   = acSubmissionNum.find(e => e.difficulty === 'Easy')   || { count: 0 };
   const mediumEntry = acSubmissionNum.find(e => e.difficulty === 'Medium') || { count: 0 };
   const hardEntry   = acSubmissionNum.find(e => e.difficulty === 'Hard')   || { count: 0 };
 
-  const verifiedTotal = allEntry.count; // This is the true "problems solved" number
+  const verifiedTotal = allEntry.count;
 
   console.log(`[LeetCode Sync] @${username} | Verified Total: ${verifiedTotal} | Easy: ${easyEntry.count} | Medium: ${mediumEntry.count} | Hard: ${hardEntry.count}`);
 
-  // ── Save username + verified total on the student record ──────────────────
-  execute(
-    'UPDATE students SET leetcode_username = ?, leetcode_total_solved = ? WHERE id = ?',
+  await execute(
+    'UPDATE students SET leetcode_username = $1, leetcode_total_solved = $2 WHERE id = $3',
     [username, verifiedTotal, studentId]
   );
 
-  // ── FIX 3: Upsert (INSERT OR REPLACE) all LeetCode tag entries ────────────
-  // This guarantees no duplicate rows on repeated Refresh Stats clicks.
-  // Keyed on UNIQUE(student_id, platform, topic).
-
-  // DSA-relevant tags to include in the chart (filter noise)
   const DSA_TOPICS = new Set([
     'Array', 'String', 'Hash Table', 'Dynamic Programming', 'Math',
     'Sorting', 'Greedy', 'Depth-First Search', 'Binary Search',
@@ -125,7 +108,6 @@ async function fetchAndSaveLeetCodeStats(studentId, username) {
     'Prefix Sum', 'Simulation', 'Counting',
   ]);
 
-  // ── FIX 2: Use REAL tagProblemCounts data ────────────────────────────────
   const allTags = [
     ...(tagProblemCounts?.fundamental   || []),
     ...(tagProblemCounts?.intermediate  || []),
@@ -136,19 +118,17 @@ async function fetchAndSaveLeetCodeStats(studentId, username) {
 
   for (const tag of allTags) {
     if (tag.problemsSolved > 0 && DSA_TOPICS.has(tag.tagName)) {
-      // INSERT OR REPLACE: if (student_id, 'LeetCode', tagName) already exists → update count
-      execute(
+      await execute(
         `INSERT INTO progress_entries (student_id, topic, platform, problems_solved)
-         VALUES (?, ?, 'LeetCode', ?)
-         ON CONFLICT(student_id, platform, topic)
-         DO UPDATE SET problems_solved = excluded.problems_solved, date_added = datetime('now')`,
+         VALUES ($1, $2, 'LeetCode', $3)
+         ON CONFLICT (student_id, platform, topic)
+         DO UPDATE SET problems_solved = EXCLUDED.problems_solved, date_added = CURRENT_TIMESTAMP`,
         [studentId, tag.tagName, tag.problemsSolved]
       );
       importedTopics.push({ topic: tag.tagName, count: tag.problemsSolved });
     }
   }
 
-  // Also upsert the difficulty-level entries (Easy/Medium/Hard Problems)
   const difficultyRows = [
     { topic: 'Easy Problems',   count: easyEntry.count },
     { topic: 'Medium Problems', count: mediumEntry.count },
@@ -156,11 +136,11 @@ async function fetchAndSaveLeetCodeStats(studentId, username) {
   ];
   for (const { topic, count } of difficultyRows) {
     if (count > 0) {
-      execute(
+      await execute(
         `INSERT INTO progress_entries (student_id, topic, platform, problems_solved)
-         VALUES (?, ?, 'LeetCode', ?)
-         ON CONFLICT(student_id, platform, topic)
-         DO UPDATE SET problems_solved = excluded.problems_solved, date_added = datetime('now')`,
+         VALUES ($1, $2, 'LeetCode', $3)
+         ON CONFLICT (student_id, platform, topic)
+         DO UPDATE SET problems_solved = EXCLUDED.problems_solved, date_added = CURRENT_TIMESTAMP`,
         [studentId, topic, count]
       );
     }
@@ -196,7 +176,7 @@ router.post('/:studentId/import-leetcode', async (req, res) => {
 
 // POST refresh stats using saved LeetCode username
 router.post('/:studentId/refresh-leetcode', async (req, res) => {
-  const student = queryOne('SELECT * FROM students WHERE id = ?', [req.params.studentId]);
+  const student = await queryOne('SELECT * FROM students WHERE id = $1', [req.params.studentId]);
   if (!student) return res.status(404).json({ error: 'Student not found' });
   if (!student.leetcode_username) {
     return res.status(400).json({ error: 'No saved LeetCode username. Please enter your username first.' });
@@ -215,14 +195,14 @@ router.post('/:studentId/refresh-leetcode', async (req, res) => {
 });
 
 // POST unlink LeetCode account for a student
-router.post('/:studentId/unlink-leetcode', (req, res) => {
+router.post('/:studentId/unlink-leetcode', async (req, res) => {
   const { studentId } = req.params;
-  execute(
-    'UPDATE students SET leetcode_username = NULL, leetcode_total_solved = 0 WHERE id = ?',
+  await execute(
+    'UPDATE students SET leetcode_username = NULL, leetcode_total_solved = 0 WHERE id = $1',
     [studentId]
   );
-  execute(
-    `DELETE FROM progress_entries WHERE student_id = ? AND platform = 'LeetCode'`,
+  await execute(
+    `DELETE FROM progress_entries WHERE student_id = $1 AND platform = 'LeetCode'`,
     [studentId]
   );
   res.json({ message: 'Successfully unlinked LeetCode account' });

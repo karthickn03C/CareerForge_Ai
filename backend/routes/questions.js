@@ -7,14 +7,14 @@ const { generateCodingProblem, generateHint } = require('../agents/codingAgent')
 const { getWeakestTopic } = require('../agents/progressAgent');
 
 // GET all practice questions for a student
-router.get('/:studentId', (req, res) => {
-  const questions = queryAll(
-    'SELECT * FROM practice_questions WHERE student_id = ? ORDER BY created_at DESC',
+router.get('/:studentId', async (req, res) => {
+  const questions = await queryAll(
+    'SELECT * FROM practice_questions WHERE student_id = $1 ORDER BY created_at DESC',
     [req.params.studentId]
   );
   const parsed = questions.map((q) => ({
     ...q,
-    options: q.options ? JSON.parse(q.options) : [],
+    options: typeof q.options === 'string' ? JSON.parse(q.options) : q.options,
   }));
   res.json(parsed);
 });
@@ -25,8 +25,8 @@ router.post('/:studentId/generate', async (req, res) => {
   let targetTopic = topic;
 
   if (!targetTopic) {
-    const entries = queryAll(
-      'SELECT * FROM progress_entries WHERE student_id = ?',
+    const entries = await queryAll(
+      'SELECT * FROM progress_entries WHERE student_id = $1',
       [req.params.studentId]
     );
     const weakest = getWeakestTopic(entries);
@@ -41,8 +41,8 @@ router.post('/:studentId/generate', async (req, res) => {
   try {
     const generated = await generateQuestion(targetTopic, difficulty || 'medium');
 
-    const result = execute(
-      `INSERT INTO practice_questions (student_id, topic, question, options, correct_answer, explanation) VALUES (?, ?, ?, ?, ?, ?)`,
+    const result = await queryOne(
+      `INSERT INTO practice_questions (student_id, topic, question, options, correct_answer, explanation) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
       [
         req.params.studentId,
         targetTopic,
@@ -54,7 +54,7 @@ router.post('/:studentId/generate', async (req, res) => {
     );
 
     res.status(201).json({
-      id: result.lastInsertRowid,
+      id: result.id,
       student_id: parseInt(req.params.studentId),
       topic: targetTopic,
       question: generated.question,
@@ -74,8 +74,8 @@ router.post('/:studentId/generate-coding', async (req, res) => {
   let targetTopic = topic;
 
   if (!targetTopic) {
-    const entries = queryAll(
-      'SELECT * FROM progress_entries WHERE student_id = ?',
+    const entries = await queryAll(
+      'SELECT * FROM progress_entries WHERE student_id = $1',
       [req.params.studentId]
     );
     const weakest = getWeakestTopic(entries);

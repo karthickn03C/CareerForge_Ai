@@ -5,16 +5,16 @@ const { generatePlan } = require('../agents/plannerAgent');
 const { getWeakAndModerateTopics } = require('../agents/progressAgent');
 
 // GET latest plan for a student
-router.get('/:studentId', (req, res) => {
-  const plan = queryOne(
-    'SELECT * FROM plans WHERE student_id = ? ORDER BY generated_at DESC LIMIT 1',
+router.get('/:studentId', async (req, res) => {
+  const plan = await queryOne(
+    'SELECT * FROM plans WHERE student_id = $1 ORDER BY generated_at DESC LIMIT 1',
     [req.params.studentId]
   );
   if (!plan) return res.json(null);
   res.json({
     ...plan,
     target_company: plan.target_company || '',
-    plan_json: JSON.parse(plan.plan_json)
+    plan_json: typeof plan.plan_json === 'string' ? JSON.parse(plan.plan_json) : plan.plan_json
   });
 });
 
@@ -23,7 +23,7 @@ router.post('/:studentId/generate', async (req, res) => {
   const { target_date, targetCompany, target_company } = req.body;
   const company = (targetCompany || target_company || '').trim();
 
-  const student = queryOne('SELECT * FROM students WHERE id = ?', [req.params.studentId]);
+  const student = await queryOne('SELECT * FROM students WHERE id = $1', [req.params.studentId]);
   if (!student) return res.status(404).json({ error: 'Student not found' });
 
   const resolvedDate = target_date || student.target_date;
@@ -43,8 +43,8 @@ router.post('/:studentId/generate', async (req, res) => {
     return res.status(400).json({ error: 'target_date must be in the future' });
   }
 
-  const entries = queryAll(
-    'SELECT * FROM progress_entries WHERE student_id = ?',
+  const entries = await queryAll(
+    'SELECT * FROM progress_entries WHERE student_id = $1',
     [req.params.studentId]
   );
   const weakTopics = getWeakAndModerateTopics(entries);
@@ -58,21 +58,19 @@ router.post('/:studentId/generate', async (req, res) => {
   try {
     const planData = await generatePlan(weakTopics, daysRemaining, company);
 
-    const result = execute(
-      'INSERT INTO plans (student_id, target_company, plan_json) VALUES (?, ?, ?)',
+    const saved = await queryOne(
+      'INSERT INTO plans (student_id, target_company, plan_json) VALUES ($1, $2, $3) RETURNING *',
       [req.params.studentId, company || null, JSON.stringify(planData)]
     );
 
     if (target_date) {
-      execute('UPDATE students SET target_date = ? WHERE id = ?', [target_date, req.params.studentId]);
+      await execute('UPDATE students SET target_date = $1 WHERE id = $2', [target_date, req.params.studentId]);
     }
-
-    const saved = queryOne('SELECT * FROM plans WHERE id = ?', [result.lastInsertRowid]);
 
     res.status(201).json({
       ...saved,
       target_company: saved.target_company || company,
-      plan_json: JSON.parse(saved.plan_json),
+      plan_json: typeof saved.plan_json === 'string' ? JSON.parse(saved.plan_json) : saved.plan_json,
       daysRemaining,
     });
   } catch (err) {

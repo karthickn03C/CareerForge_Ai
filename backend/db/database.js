@@ -1,271 +1,217 @@
-const path = require('path');
-const fs = require('fs');
+/**
+ * PostgreSQL Database Layer for CareerForge AI
+ * Centralized Connection Pool supporting Neon PostgreSQL & Render Deployment
+ */
 
-const DB_PATH = path.join(__dirname, '..', 'preppilot.db');
+const { Pool } = require('pg');
 
-let db = null;
-let SQL = null;
+let pool = null;
+
+function getPool() {
+  if (!pool) {
+    const connectionString = process.env.DATABASE_URL;
+    
+    // Check if SSL is required (Neon & Cloud PG require SSL)
+    const isProduction = process.env.NODE_ENV === 'production' || (connectionString && connectionString.includes('neon.tech'));
+    
+    pool = new Pool({
+      connectionString: connectionString || 'postgresql://postgres:postgres@localhost:5432/careerforge',
+      ssl: isProduction ? { rejectUnauthorized: false } : false,
+      max: 20,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 10000,
+    });
+
+    pool.on('error', (err) => {
+      console.error('Unexpected error on idle PostgreSQL client:', err);
+    });
+  }
+  return pool;
+}
 
 /**
- * Initialize sql.js and load or create the database file.
- * Returns the database instance.
+ * Initialize PostgreSQL Database Schema
  */
 async function initDb() {
-  if (db) return db;
+  const client = getPool();
 
-  // Dynamically require sql.js
-  const initSqlJs = require('sql.js');
-  SQL = await initSqlJs();
-
-  if (fs.existsSync(DB_PATH)) {
-    const fileBuffer = fs.readFileSync(DB_PATH);
-    db = new SQL.Database(fileBuffer);
-    console.log('✅ Loaded existing database from', DB_PATH);
-  } else {
-    db = new SQL.Database();
-    console.log('✅ Created new database at', DB_PATH);
-  }
-
-  db.run('PRAGMA foreign_keys = ON;');
-  initializeSchema();
-  persistDb(); // save initial state
-
-  return db;
-}
-
-/**
- * Persist the in-memory database to disk.
- * Call this after every write operation.
- */
-function persistDb() {
-  if (!db) return;
-  const data = db.export();
-  const buffer = Buffer.from(data);
-  fs.writeFileSync(DB_PATH, buffer);
-}
-
-function initializeSchema() {
-  db.run(`
-    CREATE TABLE IF NOT EXISTS students (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      firebase_uid TEXT UNIQUE,
-      email TEXT,
-      photo_url TEXT,
-      leetcode_username TEXT,
-      target_date TEXT,
-      created_at TEXT DEFAULT (datetime('now'))
-    );
-  `);
-
-  // Safe migrations for existing SQLite file
-  const safeAddColumn = (columnDef) => {
-    try { db.run(`ALTER TABLE students ADD COLUMN ${columnDef}`); } catch (e) {}
-  };
-  safeAddColumn('firebase_uid TEXT');
-  safeAddColumn('email TEXT');
-  safeAddColumn('photo_url TEXT');
-  safeAddColumn('leetcode_username TEXT');
-  safeAddColumn('leetcode_total_solved INTEGER DEFAULT 0');
-
-  try { db.run(`ALTER TABLE plans ADD COLUMN target_company TEXT;`); } catch (e) {}
-
-  // Reset existing linked LeetCode accounts per user request so all accounts can link fresh
   try {
-    db.run(`UPDATE students SET leetcode_username = NULL, leetcode_total_solved = 0;`);
-    db.run(`DELETE FROM progress_entries WHERE platform = 'LeetCode';`);
-  } catch (e) {}
-
-  // ── progress_entries: safe migration to add inline UNIQUE constraint ────────
-  //
-  // SQLite's ON CONFLICT clause in INSERT only fires for constraints that are
-  // defined INSIDE CREATE TABLE. A separately-created UNIQUE INDEX does NOT
-  // satisfy it. So we must ensure the table was created with
-  // UNIQUE(student_id, platform, topic) in the DDL itself.
-  //
-  // Since ALTER TABLE cannot add constraints in SQLite, we use the
-  // official SQLite migration pattern: create-new → copy → drop → rename.
-  //
-  // We detect whether the constraint already exists by inspecting the stored
-  // CREATE TABLE SQL in sqlite_master.
-
-  const progressTableInfo = queryOne(
-    `SELECT sql FROM sqlite_master WHERE type='table' AND name='progress_entries'`
-  );
-
-  const needsMigration = !progressTableInfo ||
-    !progressTableInfo.sql ||
-    !progressTableInfo.sql.toLowerCase().includes('unique(student_id');
-
-  if (needsMigration) {
-    console.log('🔧 Migrating progress_entries table to add inline UNIQUE constraint...');
-
-    try {
-      // 1. Create the new table WITHOUT FK clause in the temp table.
-      //    sql.js doesn't reliably support PRAGMA foreign_keys = OFF,
-      //    so we avoid the FK check during migration entirely.
-      //    The renamed final table has the correct FK definition.
-      db.run(`DROP TABLE IF EXISTS progress_entries_new;`);
-      db.run(`
-        CREATE TABLE progress_entries_new (
-          id             INTEGER PRIMARY KEY AUTOINCREMENT,
-          student_id     INTEGER NOT NULL,
-          topic          TEXT    NOT NULL,
-          platform       TEXT    NOT NULL,
-          problems_solved INTEGER NOT NULL DEFAULT 0,
-          date_added     TEXT    DEFAULT (datetime('now')),
-          UNIQUE(student_id, platform, topic)
-        );
-      `);
-
-      // 2. Copy existing data; INSERT OR IGNORE deduplicates —
-      //    ORDER BY problems_solved DESC keeps the highest count per unique key.
-      if (progressTableInfo) {
-        db.run(`
-          INSERT OR IGNORE INTO progress_entries_new
-            (id, student_id, topic, platform, problems_solved, date_added)
-          SELECT id, student_id, topic, platform, problems_solved, date_added
-          FROM progress_entries
-          ORDER BY problems_solved DESC;
-        `);
-
-        // 3. Drop old table
-        db.run(`DROP TABLE progress_entries;`);
-      }
-
-      // 4. Rename to canonical name
-      db.run(`ALTER TABLE progress_entries_new RENAME TO progress_entries;`);
-
-      console.log('✅ progress_entries migration complete — UNIQUE(student_id, platform, topic) now in DDL');
-    } catch (migrationErr) {
-      console.error('⚠️  progress_entries migration failed (will use existing table):', migrationErr.message);
-      // Clean up temp table if it exists
-      try { db.run(`DROP TABLE IF EXISTS progress_entries_new;`); } catch (e) {}
-    }
-
-    // Table already has the correct schema — just ensure the table exists
-    db.run(`
-      CREATE TABLE IF NOT EXISTS progress_entries (
-        id             INTEGER PRIMARY KEY AUTOINCREMENT,
-        student_id     INTEGER NOT NULL,
-        topic          TEXT    NOT NULL,
-        platform       TEXT    NOT NULL,
-        problems_solved INTEGER NOT NULL DEFAULT 0,
-        date_added     TEXT    DEFAULT (datetime('now')),
-        FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
-        UNIQUE(student_id, platform, topic)
+    // 1. Students Table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS students (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        firebase_uid VARCHAR(255) UNIQUE,
+        email VARCHAR(255),
+        photo_url TEXT,
+        leetcode_username VARCHAR(255),
+        leetcode_total_solved INT DEFAULT 0,
+        target_date VARCHAR(100),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
+
+    // 2. Progress Entries Table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS progress_entries (
+        id SERIAL PRIMARY KEY,
+        student_id INT REFERENCES students(id) ON DELETE CASCADE,
+        topic VARCHAR(255) NOT NULL,
+        platform VARCHAR(255) NOT NULL,
+        problems_solved INT NOT NULL DEFAULT 0,
+        date_added TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT unique_student_platform_topic UNIQUE(student_id, platform, topic)
+      );
+    `);
+
+    // 3. Practice Questions Table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS practice_questions (
+        id SERIAL PRIMARY KEY,
+        student_id INT REFERENCES students(id) ON DELETE CASCADE,
+        topic VARCHAR(255) NOT NULL,
+        question TEXT NOT NULL,
+        options TEXT NOT NULL,
+        correct_answer TEXT NOT NULL,
+        explanation TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // 4. Interview Sessions Table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS interview_sessions (
+        id SERIAL PRIMARY KEY,
+        student_id INT REFERENCES students(id) ON DELETE CASCADE,
+        mode VARCHAR(50) DEFAULT 'technical',
+        question TEXT NOT NULL,
+        student_answer TEXT,
+        feedback TEXT,
+        score INT,
+        strengths TEXT,
+        gaps TEXT,
+        better_answer TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // 5. Plans Table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS plans (
+        id SERIAL PRIMARY KEY,
+        student_id INT REFERENCES students(id) ON DELETE CASCADE,
+        target_company VARCHAR(255),
+        plan_json TEXT NOT NULL,
+        generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // 6. PrepPilot Coding History Table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS preppilot_coding_history (
+        id SERIAL PRIMARY KEY,
+        student_id INT REFERENCES students(id) ON DELETE CASCADE,
+        title VARCHAR(255) NOT NULL,
+        topic VARCHAR(255) NOT NULL,
+        difficulty VARCHAR(50) DEFAULT 'medium',
+        language VARCHAR(50) DEFAULT 'python',
+        status VARCHAR(50) DEFAULT 'solved',
+        date_solved TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // 7. Resume Analyses Table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS resume_analyses (
+        id SERIAL PRIMARY KEY,
+        student_id INT REFERENCES students(id) ON DELETE CASCADE,
+        file_name VARCHAR(255),
+        file_type VARCHAR(100),
+        raw_text TEXT,
+        parsed_json TEXT NOT NULL,
+        ats_scores TEXT NOT NULL,
+        feedback_json TEXT NOT NULL,
+        uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // 8. ForgeMind Conversations Table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS forgemind_conversations (
+        id VARCHAR(255) PRIMARY KEY,
+        student_id INT REFERENCES students(id) ON DELETE CASCADE,
+        title VARCHAR(255),
+        pinned INT DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // 9. ForgeMind Messages Table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS forgemind_messages (
+        id VARCHAR(255) PRIMARY KEY,
+        conversation_id VARCHAR(255) REFERENCES forgemind_conversations(id) ON DELETE CASCADE,
+        sender VARCHAR(50),
+        text TEXT,
+        file_name VARCHAR(255),
+        agent_details TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    console.log('✅ PostgreSQL Schema Initialized Successfully');
+  } catch (err) {
+    console.error('❌ PostgreSQL Schema Initialization Error:', err.message);
   }
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS practice_questions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      student_id INTEGER NOT NULL,
-      topic TEXT NOT NULL,
-      question TEXT NOT NULL,
-      options TEXT NOT NULL,
-      correct_answer TEXT NOT NULL,
-      explanation TEXT NOT NULL,
-      created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE
-    );
-  `);
-
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS interview_sessions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      student_id INTEGER NOT NULL,
-      mode TEXT DEFAULT 'technical',
-      question TEXT NOT NULL,
-      student_answer TEXT,
-      feedback TEXT,
-      score INTEGER,
-      strengths TEXT,
-      gaps TEXT,
-      better_answer TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE
-    );
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS plans (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      student_id INTEGER NOT NULL,
-      target_company TEXT,
-      plan_json TEXT NOT NULL,
-      generated_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE
-    );
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS preppilot_coding_history (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      student_id INTEGER NOT NULL,
-      title TEXT NOT NULL,
-      topic TEXT NOT NULL,
-      difficulty TEXT NOT NULL DEFAULT 'medium',
-      language TEXT NOT NULL DEFAULT 'python',
-      status TEXT NOT NULL DEFAULT 'solved',
-      date_solved TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE
-    );
-  `);
-
-  db.run(`
-    CREATE TABLE IF NOT EXISTS resume_analyses (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      student_id INTEGER NOT NULL,
-      file_name TEXT,
-      file_type TEXT,
-      raw_text TEXT,
-      parsed_json TEXT NOT NULL,
-      ats_scores TEXT NOT NULL,
-      feedback_json TEXT NOT NULL,
-      uploaded_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE
-    );
-  `);
-
-  console.log('✅ Database schema initialized');
 }
 
 /**
- * Helper: run a SELECT query and return all rows as objects.
+ * Execute SQL Query returning all rows
  */
-function queryAll(sql, params = []) {
-  const stmt = db.prepare(sql);
-  stmt.bind(params);
-  const rows = [];
-  while (stmt.step()) {
-    rows.push(stmt.getAsObject());
+async function queryAll(text, params = []) {
+  const client = getPool();
+  try {
+    const res = await client.query(text, params);
+    return res.rows;
+  } catch (err) {
+    console.error(`[PG QueryAll Error] ${text}:`, err.message);
+    return [];
   }
-  stmt.free();
-  return rows;
 }
 
 /**
- * Helper: run a SELECT query and return the first row as an object (or null).
+ * Execute SQL Query returning single row
  */
-function queryOne(sql, params = []) {
-  const rows = queryAll(sql, params);
-  return rows.length > 0 ? rows[0] : null;
+async function queryOne(text, params = []) {
+  const client = getPool();
+  try {
+    const res = await client.query(text, params);
+    return res.rows[0] || null;
+  } catch (err) {
+    console.error(`[PG QueryOne Error] ${text}:`, err.message);
+    return null;
+  }
 }
 
 /**
- * Helper: run an INSERT/UPDATE/DELETE and return lastInsertRowid + changes.
+ * Execute INSERT/UPDATE/DELETE query
  */
-function execute(sql, params = []) {
-  db.run(sql, params);
-  const meta = queryOne('SELECT last_insert_rowid() as id, changes() as changes');
-  persistDb();
-  return {
-    lastInsertRowid: meta ? meta.id : null,
-    changes: meta ? meta.changes : 0,
-  };
+async function execute(text, params = []) {
+  const client = getPool();
+  try {
+    const res = await client.query(text, params);
+    return res;
+  } catch (err) {
+    console.error(`[PG Execute Error] ${text}:`, err.message);
+    throw err;
+  }
 }
 
-module.exports = { initDb, queryAll, queryOne, execute, persistDb };
+module.exports = {
+  initDb,
+  queryAll,
+  queryOne,
+  execute,
+  getPool
+};
