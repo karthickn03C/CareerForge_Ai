@@ -71,7 +71,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             icon: const Icon(Icons.refresh),
             onPressed: () {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Connected to http://localhost:5000 REST API')),
+                const SnackBar(content: Text('Connected to Live Render REST API (Guest Mode)')),
               );
             },
           ),

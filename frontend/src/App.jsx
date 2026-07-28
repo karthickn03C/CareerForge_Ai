@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, createContext, useContext } from 'react';
 import ForgeMind from './pages/ForgeMind';
 import MyProgress from './pages/MyProgress';
 import Practice from './pages/Practice';
@@ -9,10 +9,9 @@ import Opportunities from './pages/Opportunities';
 import OfflineBanner from './components/OfflineBanner';
 
 import { syncStudent, refreshLeetCodeStats } from './api/client';
-import { signInWithGoogle, signOutUser } from './firebase';
 import {
   Brain, BarChart2, BookOpen, MessageSquare, Calendar, FileText, Compass,
-  Sun, Moon, LogOut, Zap, User, Sparkles
+  Sun, Moon, LogOut, Zap, User, Sparkles, ChevronDown
 } from 'lucide-react';
 
 const TABS = [
@@ -25,12 +24,18 @@ const TABS = [
   { id: 'opportunities', label: 'Opportunity Discovery', icon: Compass },
 ];
 
+export const GuestContext = createContext(null);
+
+export function useGuest() {
+  return useContext(GuestContext);
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('forgemind');
-  const [authUser, setAuthUser] = useState(null);
+  const [guestUser, setGuestUser] = useState(null);
   const [student, setStudent] = useState(null);
-  const [signingIn, setSigningIn] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem('careerforge_theme') || 'light');
+  const [showDropdown, setShowDropdown] = useState(false);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -38,62 +43,71 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
-    const savedUser = localStorage.getItem('preppilot_auth_user');
-    if (savedUser) {
-      try {
-        const parsed = JSON.parse(savedUser);
-        setAuthUser(parsed);
-        syncAndLoadStudent(parsed);
-      } catch (e) {
-        localStorage.removeItem('preppilot_auth_user');
-      }
+    const isGuest = localStorage.getItem('careerforge_guest') === 'true';
+    if (isGuest) {
+      const user = {
+        id: 'guest',
+        name: 'Guest User',
+        email: '',
+        photo: null,
+        isGuest: true,
+      };
+      setGuestUser(user);
+      syncAndLoadGuestStudent(user);
     }
   }, []);
 
-  async function syncAndLoadStudent(user) {
+  async function syncAndLoadGuestStudent(user) {
     try {
       const synced = await syncStudent({
-        firebase_uid: user.uid,
+        firebase_uid: 'guest_uid_2026',
         name: user.name,
-        email: user.email,
-        photo_url: user.photoURL,
+        email: 'guest@careerforge.ai',
+        photo_url: null,
       });
       setStudent(synced);
       if (synced.leetcode_username) {
         refreshLeetCodeStats(synced.id).catch(() => {});
       }
     } catch (err) {
-      console.error('Failed to sync user with backend DB:', err);
+      console.error('Failed to sync guest student with backend DB:', err);
+      // Fallback guest student object so application operates offline
+      setStudent({
+        id: 1,
+        name: 'Guest User',
+        email: 'guest@careerforge.ai',
+        leetcode_username: null,
+        leetcode_total_solved: 0,
+      });
     }
   }
 
-  async function handleGoogleSignIn() {
-    setSigningIn(true);
-    try {
-      const user = await signInWithGoogle();
-      setAuthUser(user);
-      localStorage.setItem('preppilot_auth_user', JSON.stringify(user));
-      await syncAndLoadStudent(user);
-    } catch (err) {
-      console.error('Sign-in error:', err);
-    } finally {
-      setSigningIn(false);
-    }
+  function handleContinueAsGuest() {
+    localStorage.setItem('careerforge_guest', 'true');
+    const user = {
+      id: 'guest',
+      name: 'Guest User',
+      email: '',
+      photo: null,
+      isGuest: true,
+    };
+    setGuestUser(user);
+    syncAndLoadGuestStudent(user);
   }
 
-  async function handleSignOut() {
-    await signOutUser();
-    setAuthUser(null);
+  function handleLogout() {
+    localStorage.removeItem('careerforge_guest');
+    setGuestUser(null);
     setStudent(null);
-    localStorage.removeItem('preppilot_auth_user');
+    setShowDropdown(false);
   }
 
   const toggleTheme = () => {
     setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
   };
 
-  // Unauthenticated Login / Register Landing Screen
-  if (!authUser || !student) {
+  // Modern Unauthenticated Landing / Guest Login Screen
+  if (!guestUser || !student) {
     return (
       <div style={{
         minHeight: '100vh',
@@ -125,155 +139,221 @@ export default function App() {
             Empower your placement prep with AI agents for DSA progress tracking, adaptive practice, voice mock interviews, resume analysis, and opportunity discovery.
           </p>
 
-          <button
-            className="btn btn-primary btn-lg"
-            onClick={handleGoogleSignIn}
-            disabled={signingIn}
-            style={{ width: '100%', justifyContent: 'center', gap: 12, borderRadius: 14 }}
-          >
-            {signingIn ? (
-              <>
-                <span className="spinner" />
-                <span>Signing in...</span>
-              </>
-            ) : (
-              <>
-                <svg width="18" height="18" viewBox="0 0 24 24">
-                  <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
-                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
-                </svg>
-                <span>Continue with Google</span>
-              </>
-            )}
-          </button>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <button
+              className="btn btn-primary btn-lg"
+              onClick={handleContinueAsGuest}
+              style={{ width: '100%', justifyContent: 'center', gap: 10, borderRadius: 14, fontWeight: 800 }}
+            >
+              <Sparkles size={18} />
+              <span>Continue as Guest</span>
+            </button>
+
+            <button
+              className="btn btn-secondary btn-lg"
+              onClick={handleContinueAsGuest}
+              style={{ width: '100%', justifyContent: 'center', gap: 10, borderRadius: 14, fontWeight: 700 }}
+            >
+              <User size={18} />
+              <span>Enter Dashboard</span>
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)' }}>
-      <OfflineBanner />
-      {/* Top Re-aligned Clean Navbar */}
-      <header style={{
-        position: 'sticky', top: 0, zIndex: 100,
-        height: 64, padding: '0 28px',
-        background: 'var(--navbar-bg)',
-        backdropFilter: 'blur(12px)',
-        borderBottom: '1px solid var(--border-color)',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      }}>
-        {/* Left: Brand Logo & Title */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{
-            width: 38, height: 38, borderRadius: 12,
-            background: 'linear-gradient(135deg, var(--primary), var(--accent))',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
-            boxShadow: '0 4px 12px rgba(79, 70, 229, 0.25)',
-          }}>
-            <Zap size={22} />
-          </div>
-          <div>
-            <span style={{ fontSize: 18, fontWeight: 900, color: 'var(--text-primary)', letterSpacing: '-0.4px' }}>
-              CareerForge <span style={{ color: 'var(--primary)' }}>AI</span>
-            </span>
-            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.6px', marginTop: -2 }}>
-              AI Career Intelligence Platform
-            </span>
-          </div>
-        </div>
-
-        {/* Right: Clean Controls (Dark Mode Toggle + User Profile + Logout) */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          {/* Dark / Light Mode Toggle */}
-          <button
-            onClick={toggleTheme}
-            className="btn btn-secondary btn-sm"
-            style={{ borderRadius: 20, padding: '6px 14px', gap: 6 }}
-            title="Toggle Dark/Light Theme"
-          >
-            {theme === 'dark' ? <Sun size={15} color="#FBBF24" /> : <Moon size={15} color="#4F46E5" />}
-            <span style={{ fontSize: 12, fontWeight: 700 }}>{theme === 'dark' ? 'Light' : 'Dark'}</span>
-          </button>
-
-          {/* User Profile */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 10px', borderRadius: 20, background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
-            {student.photo_url ? (
-              <img src={student.photo_url} alt={student.name} style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover' }} />
-            ) : (
-              <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--primary)', color: '#fff', fontSize: 13, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                {student.name ? student.name[0] : 'U'}
-              </div>
-            )}
-            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{student.name}</span>
-          </div>
-
-          {/* Logout */}
-          <button
-            onClick={handleSignOut}
-            className="btn btn-secondary btn-sm"
-            style={{ borderRadius: 10 }}
-            title="Log Out"
-          >
-            <LogOut size={15} />
-            <span>Logout</span>
-          </button>
-        </div>
-      </header>
-
-      {/* Main Body Grid Layout */}
-      <div style={{ flex: 1, display: 'flex' }}>
-        {/* Sidebar */}
-        <aside style={{
-          width: 260, flexShrink: 0,
-          background: 'var(--sidebar-bg)',
-          borderRight: '1px solid var(--border-color)',
-          padding: '20px 14px',
-          display: 'flex', flexDirection: 'column', gap: 6,
+    <GuestContext.Provider value={guestUser}>
+      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)' }}>
+        <OfflineBanner />
+        {/* Top Navbar */}
+        <header style={{
+          position: 'sticky', top: 0, zIndex: 100,
+          height: 64, padding: '0 28px',
+          background: 'var(--navbar-bg)',
+          backdropFilter: 'blur(12px)',
+          borderBottom: '1px solid var(--border-color)',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         }}>
-          <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.8px', padding: '4px 14px 10px' }}>
-            Navigation
-          </p>
+          {/* Left: Brand Logo & Title */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{
+              width: 38, height: 38, borderRadius: 12,
+              background: 'linear-gradient(135deg, var(--primary), var(--accent))',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
+              boxShadow: '0 4px 12px rgba(79, 70, 229, 0.25)',
+            }}>
+              <Zap size={22} />
+            </div>
+            <div>
+              <span style={{ fontSize: 18, fontWeight: 900, color: 'var(--text-primary)', letterSpacing: '-0.4px' }}>
+                CareerForge <span style={{ color: 'var(--primary)' }}>AI</span>
+              </span>
+              <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.6px', marginTop: -2 }}>
+                AI Career Intelligence Platform
+              </span>
+            </div>
+          </div>
 
-          {TABS.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
+          {/* Right: Controls & Guest Profile */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <button
+              onClick={toggleTheme}
+              className="btn btn-secondary btn-sm"
+              style={{ borderRadius: 20, padding: '6px 14px', gap: 6 }}
+              title="Toggle Dark/Light Theme"
+            >
+              {theme === 'dark' ? <Sun size={15} color="#FBBF24" /> : <Moon size={15} color="#4F46E5" />}
+              <span style={{ fontSize: 12, fontWeight: 700 }}>{theme === 'dark' ? 'Light' : 'Dark'}</span>
+            </button>
+
+            {/* Guest User Profile Dropdown */}
+            <div style={{ position: 'relative' }}>
               <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => setShowDropdown(prev => !prev)}
+                className="btn btn-secondary btn-sm"
                 style={{
-                  display: 'flex', alignItems: 'center', gap: 12,
-                  padding: '10px 14px', borderRadius: 12,
-                  fontSize: 13, fontWeight: isActive ? 700 : 600,
-                  border: 'none', cursor: 'pointer', textAlign: 'left',
-                  background: isActive ? 'linear-gradient(135deg, var(--primary), var(--accent))' : 'transparent',
-                  color: isActive ? '#FFFFFF' : 'var(--text-secondary)',
-                  boxShadow: isActive ? '0 4px 14px rgba(79, 70, 229, 0.25)' : 'none',
-                  transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
-                  height: 44
+                  borderRadius: 24,
+                  padding: '4px 12px 4px 6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  background: 'var(--card-bg)',
+                  border: '1px solid var(--border-color)',
                 }}
               >
-                <Icon size={18} color={isActive ? '#FFFFFF' : 'var(--text-secondary)'} style={{ flexShrink: 0 }} />
-                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tab.label}</span>
+                <div style={{
+                  width: 28, height: 28, borderRadius: '50%',
+                  background: 'linear-gradient(135deg, #6366F1, #8B5CF6)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: 'white', fontWeight: 800, fontSize: 13
+                }}>
+                  👤
+                </div>
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>Guest User</span>
+                <ChevronDown size={14} color="var(--text-muted)" />
               </button>
-            );
-          })}
-        </aside>
 
-        {/* Main Content View Container */}
-        <main style={{ flex: 1, padding: '28px 36px', overflowY: 'auto' }}>
-          {activeTab === 'forgemind' && <ForgeMind student={student} theme={theme} onNavigate={(tab) => setActiveTab(tab)} />}
-          {activeTab === 'progress' && <MyProgress student={student} theme={theme} onStudentUpdate={setStudent} />}
-          {activeTab === 'practice' && <Practice student={student} theme={theme} />}
-          {activeTab === 'interview' && <Interview student={student} theme={theme} />}
-          {activeTab === 'plan' && <MyPlan student={student} theme={theme} />}
-          {activeTab === 'resume' && <ResumeAnalyzer student={student} theme={theme} />}
-          {activeTab === 'opportunities' && <Opportunities student={student} theme={theme} />}
-        </main>
+              {showDropdown && (
+                <div
+                  className="card animate-scale-in"
+                  style={{
+                    position: 'absolute', right: 0, top: 44, width: 210,
+                    padding: 8, borderRadius: 16, zIndex: 200,
+                    boxShadow: '0 12px 32px rgba(0,0,0,0.18)',
+                    border: '1px solid var(--border-color)',
+                  }}
+                >
+                  <button
+                    onClick={() => { setActiveTab('progress'); setShowDropdown(false); }}
+                    style={{
+                      width: '100%', padding: '10px 14px', borderRadius: 10,
+                      display: 'flex', alignItems: 'center', gap: 10, border: 'none',
+                      background: 'transparent', color: 'var(--text-primary)', fontWeight: 600, fontSize: 13, cursor: 'pointer'
+                    }}
+                  >
+                    <BarChart2 size={16} color="var(--primary)" />
+                    <span>My Progress</span>
+                  </button>
+
+                  <button
+                    onClick={() => { setActiveTab('resume'); setShowDropdown(false); }}
+                    style={{
+                      width: '100%', padding: '10px 14px', borderRadius: 10,
+                      display: 'flex', alignItems: 'center', gap: 10, border: 'none',
+                      background: 'transparent', color: 'var(--text-primary)', fontWeight: 600, fontSize: 13, cursor: 'pointer'
+                    }}
+                  >
+                    <FileText size={16} color="var(--primary)" />
+                    <span>Resume Analyzer</span>
+                  </button>
+
+                  <button
+                    onClick={() => { setActiveTab('forgemind'); setShowDropdown(false); }}
+                    style={{
+                      width: '100%', padding: '10px 14px', borderRadius: 10,
+                      display: 'flex', alignItems: 'center', gap: 10, border: 'none',
+                      background: 'transparent', color: 'var(--text-primary)', fontWeight: 600, fontSize: 13, cursor: 'pointer'
+                    }}
+                  >
+                    <Brain size={16} color="var(--primary)" />
+                    <span>ForgeMind AI</span>
+                  </button>
+
+                  <div style={{ height: 1, background: 'var(--border-color)', margin: '4px 0' }} />
+
+                  <button
+                    onClick={handleLogout}
+                    style={{
+                      width: '100%', padding: '10px 14px', borderRadius: 10,
+                      display: 'flex', alignItems: 'center', gap: 10, border: 'none',
+                      background: 'rgba(239, 68, 68, 0.08)', color: '#EF4444', fontWeight: 700, fontSize: 13, cursor: 'pointer'
+                    }}
+                  >
+                    <LogOut size={16} />
+                    <span>Logout</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </header>
+
+        {/* Main Application Body */}
+        <div style={{ display: 'flex', flex: 1 }}>
+          {/* Sidebar Navigation */}
+          <aside style={{
+            width: 240,
+            background: 'var(--sidebar-bg)',
+            borderRight: '1px solid var(--border-color)',
+            padding: '20px 12px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 6,
+          }}>
+            {TABS.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 12,
+                    padding: '12px 16px',
+                    borderRadius: 12,
+                    border: 'none',
+                    background: isActive ? 'linear-gradient(135deg, var(--primary), var(--accent))' : 'transparent',
+                    color: isActive ? '#ffffff' : 'var(--text-secondary)',
+                    fontWeight: isActive ? 700 : 600,
+                    fontSize: 14,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    boxShadow: isActive ? '0 4px 14px rgba(79, 70, 229, 0.3)' : 'none',
+                  }}
+                >
+                  <Icon size={18} color={isActive ? '#ffffff' : 'var(--text-muted)'} />
+                  <span>{tab.label}</span>
+                </button>
+              );
+            })}
+          </aside>
+
+          {/* Page Content Container */}
+          <main style={{ flex: 1, padding: 32, overflowY: 'auto' }}>
+            {activeTab === 'forgemind' && <ForgeMind student={student} />}
+            {activeTab === 'progress' && <MyProgress student={student} onNavigateToPractice={() => setActiveTab('practice')} />}
+            {activeTab === 'practice' && <Practice student={student} />}
+            {activeTab === 'interview' && <Interview student={student} />}
+            {activeTab === 'plan' && <MyPlan student={student} />}
+            {activeTab === 'resume' && <ResumeAnalyzer student={student} />}
+            {activeTab === 'opportunities' && <Opportunities student={student} />}
+          </main>
+        </div>
       </div>
-    </div>
+    </GuestContext.Provider>
   );
 }
