@@ -1,0 +1,243 @@
+/**
+ * Agent Manager & Multi-Agent Orchestrator Service
+ * Executes only required agents, manages conversation memory, synthesizes natural responses.
+ */
+
+const Groq = require('groq-sdk');
+const { parseResumeWithAI } = require('./resumeAgent');
+const { generateCodingProblem } = require('./codingAgent');
+const { askQuestion } = require('./interviewAgent');
+const { generatePlan } = require('./plannerAgent');
+const { discoverOpportunities } = require('./opportunityAgent');
+const { analyzeProgress } = require('./progressAgent');
+const { queryAll, queryOne, execute } = require('../db/database');
+
+const MODELS = [
+  'llama-3.3-70b-versatile',
+  'llama-3.1-8b-instant',
+  'qwen/qwen3.6-27b'
+];
+
+function getGroq() {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey || !apiKey.trim()) {
+    throw new Error('GROQ_API_KEY is missing in backend .env file.');
+  }
+  return new Groq({ apiKey });
+}
+
+function extractJson(text) {
+  let cleaned = text.trim();
+  if (cleaned.includes('```')) {
+    cleaned = cleaned.replace(/^```[a-z]*\n?/gi, '').replace(/\n?```$/gi, '').trim();
+  }
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  if (start !== -1 && end !== -1 && end > start) {
+    cleaned = cleaned.substring(start, end + 1);
+  }
+  return JSON.parse(cleaned);
+}
+
+// ── 1. INTENT DETECTION PROMPT ─────────────────────────────────────────────
+const INTENT_CLASSIFIER_PROMPT = `You are the Intent Router for ForgeMind AI, the master orchestrator of CareerForge AI.
+Your ONLY job is to classify the user's intent and select required internal agents.
+
+Available Agents:
+- "resume": Analyze/review uploaded resume or profile.
+- "practice": Generate coding problems, DSA challenges, algorithm practice.
+- "interview": Conduct mock interviews, technical/HR questions, answer feedback.
+- "plan": Create day-by-day or week-by-week study roadmap/schedule.
+- "opportunity": Discover internships, hackathons, open source, fellowships, or bookmark actions.
+- "progress": Analyze weak topics, solved counts, LeetCode stats, or skill breakdown.
+
+Strict Intent Rules:
+1. GREETING / CASUAL QUERY (e.g. "hi", "hello", "good morning", "what can you do", "who are you"):
+   - Set "intent": "greeting", "agents": []. DO NOT invoke any agents.
+2. SPECIFIC ACTIONABLE REQUEST (e.g. "review resume", "find internships", "practice DSA"):
+   - Include ONLY the 1 or 2 relevant agent keys.
+3. COMPREHENSIVE PLACEMENT QUERY (e.g. "prepare me for Amazon", "I want placement in Zoho"):
+   - Include all relevant agents: ["resume", "practice", "interview", "plan", "opportunity", "progress"].
+
+Respond ONLY in strict JSON:
+{
+  "intent": "greeting|resume_review|find_opportunities|placement_prep|practice_coding|mock_interview|study_plan|progress_analysis|bookmark_action",
+  "agents": ["resume", "practice", "interview", "plan", "opportunity", "progress"],
+  "primaryTopic": "Arrays|Dynamic Programming|System Design|HR|General",
+  "targetCompany": "Amazon|Google|TCS|Zoho|None",
+  "action": "none|bookmark|save_resume"
+}`;
+
+// ── 2. RESPONSE SYNTHESIS PROMPT ───────────────────────────────────────────
+const RESPONSE_SYNTHESIZER_PROMPT = `You are ForgeMind AI, a warm, highly intelligent, human-like AI Career Intelligence Assistant (like ChatGPT or Claude) for CareerForge AI.
+
+Your Goals:
+1. Respond naturally, conversationally, and empathetically.
+2. If the user greeted you or asked what you can do, introduce yourself warmly, state your capabilities in clean bullet points, and suggest 3-4 inspiring prompts.
+3. If internal agents provided data, synthesize it seamlessly into ONE cohesive, friendly answer.
+4. NEVER use template headers like "Executive Strategy" or "Roadmap" unless explicitly requested.
+5. NEVER mention internal agent names, JSON formats, or backend tool calls. Speak as ONE unified AI assistant.
+
+Candidate Name: {{studentName}}
+Candidate Profile Memory: {{memorySummary}}`;
+
+/**
+ * Core Multi-Agent Orchestrator
+ */
+async function processChatMessage({ studentId, studentName = 'Candidate', userQuery, conversationId, attachedText = '' }) {
+  const groq = getGroq();
+
+  // Load candidate long-term memory
+  const progressEntries = queryAll('SELECT * FROM progress_entries WHERE student_id = ?', [studentId]);
+  let latestPlan = null;
+  try {
+    latestPlan = queryOne('SELECT * FROM study_plans WHERE student_id = ? ORDER BY created_at DESC', [studentId]);
+  } catch (e) {}
+
+  const weakTopics = analyzeProgress(progressEntries);
+  const memorySummary = `Known Skills: Python, JS, DSA | Solved: ${progressEntries.reduce((s, e) => s + e.problems_solved, 0)} problems | Weakest Topic: ${weakTopics[0]?.topic || 'None'} | Target Plan: ${latestPlan?.target_company || 'General'}`;
+
+  // 1. Intent Detection Call
+  let routing = { intent: 'general', agents: [], primaryTopic: 'General', targetCompany: '', action: 'none' };
+  try {
+    for (const model of MODELS) {
+      try {
+        const completion = await groq.chat.completions.create({
+          model,
+          messages: [
+            { role: 'system', content: INTENT_CLASSIFIER_PROMPT },
+            { role: 'user', content: `Query: "${userQuery}"\nAttached Document: ${attachedText ? 'Yes' : 'No'}` }
+          ],
+          temperature: 0.1,
+          max_tokens: 300,
+          response_format: { type: 'json_object' }
+        });
+        routing = extractJson(completion.choices[0]?.message?.content || '');
+        if (routing.agents && Array.isArray(routing.agents)) break;
+      } catch (err) {
+        console.warn(`[Intent Router] Model ${model} note:`, err.message);
+      }
+    }
+  } catch (e) {
+    console.warn('[Intent Router] Fallback used:', e.message);
+  }
+
+  // Force resume agent if document attached
+  if (attachedText && Array.isArray(routing.agents) && !routing.agents.includes('resume')) {
+    routing.agents.push('resume');
+  }
+
+  // 2. Execute Only Required Sub-Agents in Parallel
+  const agentTasks = [];
+  const outputs = {
+    resumeData: null,
+    practiceData: null,
+    interviewData: null,
+    planData: null,
+    opportunityData: null,
+    progressData: null,
+    partialErrors: []
+  };
+
+  if (routing.agents.includes('resume') && attachedText) {
+    agentTasks.push(
+      parseResumeWithAI(attachedText)
+        .then(d => { outputs.resumeData = d; })
+        .catch(e => outputs.partialErrors.push(`Resume Agent: ${e.message}`))
+    );
+  }
+
+  if (routing.agents.includes('practice')) {
+    const topic = routing.primaryTopic && routing.primaryTopic !== 'General' ? routing.primaryTopic : (weakTopics[0]?.topic || 'Arrays');
+    agentTasks.push(
+      generateCodingProblem(topic, 'medium', 'python')
+        .then(d => { outputs.practiceData = d; })
+        .catch(e => outputs.partialErrors.push(`Coding Agent: ${e.message}`))
+    );
+  }
+
+  if (routing.agents.includes('interview')) {
+    agentTasks.push(
+      askQuestion(routing.primaryTopic || 'General', 'technical', 'intermediate')
+        .then(d => { outputs.interviewData = d; })
+        .catch(e => outputs.partialErrors.push(`Mock Interview Agent: ${e.message}`))
+    );
+  }
+
+  if (routing.agents.includes('plan')) {
+    agentTasks.push(
+      generatePlan(weakTopics.length > 0 ? weakTopics : [{ topic: 'Arrays', problems_solved: 2, status: 'weak' }], 30, routing.targetCompany || '')
+        .then(d => { outputs.planData = d; })
+        .catch(e => outputs.partialErrors.push(`Plan Agent: ${e.message}`))
+    );
+  }
+
+  if (routing.agents.includes('opportunity')) {
+    agentTasks.push(
+      discoverOpportunities({
+        careerGoal: routing.targetCompany ? `Engineer at ${routing.targetCompany}` : 'Software Engineer',
+        role: 'Full Stack / AI Engineer',
+        domain: routing.primaryTopic || 'Web Development & AI',
+        skillLevel: 'Intermediate',
+      })
+        .then(d => { outputs.opportunityData = d; })
+        .catch(e => outputs.partialErrors.push(`Opportunity Agent: ${e.message}`))
+    );
+  }
+
+  if (routing.agents.includes('progress')) {
+    outputs.progressData = {
+      totalSolved: progressEntries.reduce((s, e) => s + (e.problems_solved || 0), 0),
+      analysis: weakTopics
+    };
+  }
+
+  await Promise.allSettled(agentTasks);
+
+  // 3. Response Synthesis Phase
+  const systemPrompt = RESPONSE_SYNTHESIZER_PROMPT
+    .replace('{{studentName}}', studentName)
+    .replace('{{memorySummary}}', memorySummary);
+
+  const userContext = `User Query: "${userQuery}"
+Executed Agents: ${routing.agents.length > 0 ? routing.agents.join(', ') : 'None (Conversational)'}
+
+Internal Sub-Agent Findings:
+- Resume Profile: ${outputs.resumeData ? `${outputs.resumeData.fullName} (${outputs.resumeData.experienceLevel})` : 'N/A'}
+- Coding Challenge: ${outputs.practiceData ? outputs.practiceData.title : 'N/A'}
+- Interview Question: ${outputs.interviewData ? outputs.interviewData.question : 'N/A'}
+- Study Plan: ${outputs.planData ? `${outputs.planData.planType} plan for ${outputs.planData.targetCompany || 'General'}` : 'N/A'}
+- Opportunities Discovered: ${outputs.opportunityData ? outputs.opportunityData.opportunities?.length : 'N/A'}
+- Weakest Topic: ${outputs.progressData?.analysis?.[0]?.topic || 'N/A'}`;
+
+  let finalMarkdown = '';
+  for (const model of MODELS) {
+    try {
+      const completion = await groq.chat.completions.create({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userContext }
+        ],
+        temperature: 0.7,
+        max_tokens: 1800
+      });
+      finalMarkdown = completion.choices[0]?.message?.content || '';
+      if (finalMarkdown) break;
+    } catch (e) {
+      console.warn(`[Synthesizer] Model ${model} note:`, e.message);
+    }
+  }
+
+  if (!finalMarkdown) {
+    finalMarkdown = `Hi ${studentName}! I'm ForgeMind AI. How can I assist with your placement prep today?`;
+  }
+
+  return {
+    markdownResponse: finalMarkdown,
+    agentOutputs: outputs,
+    routing
+  };
+}
+
+module.exports = { processChatMessage };
