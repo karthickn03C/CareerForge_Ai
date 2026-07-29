@@ -48,6 +48,29 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
+// Root API Endpoint
+app.get(['/api', '/'], (_req, res) => {
+  res.json({
+    success: true,
+    project: 'CareerForge AI',
+    status: 'Running',
+    version: '1.0.0',
+    message: 'CareerForge AI Backend is running successfully.',
+    availableEndpoints: [
+      '/api/health',
+      '/api/auth',
+      '/api/students',
+      '/api/progress',
+      '/api/questions',
+      '/api/interview',
+      '/api/planner',
+      '/api/resume',
+      '/api/forgemind',
+      '/api/opportunities'
+    ]
+  });
+});
+
 // ── Error Handler ──────────────────────────────────────────────────────────
 app.use((err, _req, res, _next) => {
   console.error('Unhandled error:', err);
