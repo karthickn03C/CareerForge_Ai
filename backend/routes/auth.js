@@ -50,17 +50,20 @@ router.post('/register', async (req, res) => {
     // Public registration is ALWAYS Student role
     const userRole = 'student';
 
-    // Check if user already exists
-    const existing = queryOne('SELECT * FROM users WHERE email = ?', [normalizedEmail]);
+    // Check if user already exists in either table
+    let existing = queryOne('SELECT * FROM students WHERE email = ?', [normalizedEmail]);
+    if (!existing) {
+      existing = queryOne('SELECT * FROM users WHERE email = ?', [normalizedEmail]);
+    }
     if (existing) {
-      return res.status(400).json({ error: 'This email is already registered. Please sign in.' });
+      return res.status(400).json({ error: 'This email is already registered. Click below to Sign In.' });
     }
 
     // Hash password with bcrypt
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Insert new user into database
+    // Insert new user into users table
     const result = execute(
       'INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)',
       [name.trim(), normalizedEmail, hashedPassword, userRole]
@@ -68,14 +71,20 @@ router.post('/register', async (req, res) => {
 
     const newUser = queryOne('SELECT id, name, email, role, created_at FROM users WHERE id = ?', [result.lastInsertRowid]);
 
-    // Ensure corresponding student record
+    // Insert or update corresponding student record WITH password & role
     let student = queryOne('SELECT * FROM students WHERE email = ?', [normalizedEmail]);
     if (!student) {
       const sResult = execute(
-        'INSERT INTO students (name, email) VALUES (?, ?)',
-        [name.trim(), normalizedEmail]
+        'INSERT INTO students (name, email, password, role) VALUES (?, ?, ?, ?)',
+        [name.trim(), normalizedEmail, hashedPassword, userRole]
       );
       student = queryOne('SELECT * FROM students WHERE id = ?', [sResult.lastInsertRowid]);
+    } else {
+      execute(
+        'UPDATE students SET password = ?, role = ? WHERE email = ?',
+        [hashedPassword, userRole, normalizedEmail]
+      );
+      student = queryOne('SELECT * FROM students WHERE email = ?', [normalizedEmail]);
     }
 
     // Generate JWT token with role
@@ -127,7 +136,7 @@ router.post('/login', async (req, res) => {
 
     if (!account || !account.password) {
       console.log(`[LOGIN ATTEMPT] FAILED - Account not found for email: "${normalizedEmail}"`);
-      return res.status(400).json({ error: 'This account does not exist.' });
+      return res.status(400).json({ error: 'No account found. Would you like to create an account?' });
     }
 
     console.log(`[LOGIN ATTEMPT] Stored User Role: "${account.role}"`);
