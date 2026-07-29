@@ -262,8 +262,9 @@ def transform_output_val(val):
 
 ${cleanCode}
 
-# Dynamic function / class method detection
+# Dynamic function / class method / class instance detection
 target_fn = None
+target_cls = None
 HELPER_NAMES = {'ListNode', 'TreeNode', 'Node', 'build_linked_list', 'linked_list_to_list', 'build_binary_tree', 'binary_tree_to_list', 'transform_input_param', 'transform_output_val'}
 
 # 1. Standalone function check
@@ -272,10 +273,11 @@ for name, obj in list(locals().items()):
         target_fn = obj
         break
 
-# 2. Class instance method fallback (e.g. class Solution)
+# 2. Class fallback (e.g. class Solution or class MyQueue)
 if not target_fn:
     for name, obj in list(locals().items()):
         if inspect.isclass(obj) and obj.__module__ == '__main__' and name not in HELPER_NAMES:
+            target_cls = obj
             try:
                 inst = obj()
                 for attr_name in dir(inst):
@@ -289,11 +291,11 @@ if not target_fn:
             if target_fn:
                 break
 
-if not target_fn:
-    raise RuntimeError("No executable target function found in code.")
+if not target_fn and not target_cls:
+    raise RuntimeError("No executable target function or class found in code.")
 
-sig = inspect.signature(target_fn)
-param_names = [p for p in sig.parameters.keys() if p != 'self']
+sig = inspect.signature(target_fn) if target_fn else None
+param_names = [p for p in sig.parameters.keys() if p != 'self'] if sig else []
 param_count = len(param_names)
 
 test_cases = ${JSON.stringify(testCases)}
@@ -311,29 +313,52 @@ for idx, tc in enumerate(test_cases):
             except Exception:
                 parsed_val = raw_input
 
-        # Smart Data Structure Param Transformation
         actual_val = None
-        if isinstance(parsed_val, list) and len(parsed_val) == 1 and isinstance(parsed_val[0], list) and param_count > 1:
-            parsed_val = parsed_val[0]
 
-        if param_count == 1:
-            val_to_pass = parsed_val[0] if (isinstance(parsed_val, list) and len(parsed_val) == 1) else parsed_val
-            pname = param_names[0] if param_names else ""
-            transformed_arg = transform_input_param(val_to_pass, pname)
-            actual_val = target_fn(transformed_arg)
+        # A. Multi-operation design problem check: list of [op_name, *args] (e.g. [['push', 1], ['pop']])
+        is_multi_op = False
+        if target_cls and isinstance(parsed_val, list) and len(parsed_val) > 0 and all(isinstance(op, list) and len(op) > 0 and isinstance(op[0], str) for op in parsed_val):
+            is_multi_op = True
+
+        if is_multi_op:
+            inst = target_cls()
+            op_outputs = []
+            for op in parsed_val:
+                mname = op[0]
+                margs = op[1:]
+                if hasattr(inst, mname):
+                    method = getattr(inst, mname)
+                    res = method(*margs)
+                    if res is None:
+                        op_outputs.append(-1)
+                    else:
+                        op_outputs.append(res)
+                else:
+                    op_outputs.append(None)
+            actual_val = op_outputs
         else:
-            if isinstance(parsed_val, list) and len(parsed_val) == param_count:
-                transformed_args = [transform_input_param(arg, param_names[i] if i < len(param_names) else "") for i, arg in enumerate(parsed_val)]
-                actual_val = target_fn(*transformed_args)
-            elif isinstance(parsed_val, dict):
-                transformed_kwargs = {k: transform_input_param(v, k) for k, v in parsed_val.items()}
-                actual_val = target_fn(**transformed_kwargs)
+            # B. Single function / method execution
+            if isinstance(parsed_val, list) and len(parsed_val) == 1 and isinstance(parsed_val[0], list) and param_count > 1:
+                parsed_val = parsed_val[0]
+
+            if param_count == 1:
+                val_to_pass = parsed_val[0] if (isinstance(parsed_val, list) and len(parsed_val) == 1) else parsed_val
+                pname = param_names[0] if param_names else ""
+                transformed_arg = transform_input_param(val_to_pass, pname)
+                actual_val = target_fn(transformed_arg)
             else:
-                try:
-                    transformed_arg = transform_input_param(parsed_val, param_names[0] if param_names else "")
-                    actual_val = target_fn(transformed_arg)
-                except TypeError:
-                    actual_val = target_fn(parsed_val)
+                if isinstance(parsed_val, list) and len(parsed_val) == param_count:
+                    transformed_args = [transform_input_param(arg, param_names[i] if i < len(param_names) else "") for i, arg in enumerate(parsed_val)]
+                    actual_val = target_fn(*transformed_args)
+                elif isinstance(parsed_val, dict):
+                    transformed_kwargs = {k: transform_input_param(v, k) for k, v in parsed_val.items()}
+                    actual_val = target_fn(**transformed_kwargs)
+                else:
+                    try:
+                        transformed_arg = transform_input_param(parsed_val, param_names[0] if param_names else "")
+                        actual_val = target_fn(transformed_arg)
+                    except TypeError:
+                        actual_val = target_fn(parsed_val)
 
         # Transform output (ListNode/TreeNode back to Python lists)
         actual_val = transform_output_val(actual_val)
