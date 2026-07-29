@@ -33,10 +33,11 @@ export default function App() {
   const [loadingSession, setLoadingSession] = useState(true);
 
   const [activeTab, setActiveTab] = useState('forgemind');
-  const [theme, setTheme] = useState('dark'); // Dark theme default
+  const [theme, setTheme] = useState(() => localStorage.getItem('careerforge_theme') || 'light');
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('careerforge_theme', theme);
   }, [theme]);
 
   // Restore authenticated JWT session on page load / refresh

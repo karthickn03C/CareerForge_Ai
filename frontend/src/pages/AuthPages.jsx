@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { loginUser, registerUser } from '../api/client';
-import { Zap, Mail, Lock, User, ShieldCheck } from 'lucide-react';
+import { Zap, Mail, Lock, User, ShieldCheck, Eye, EyeOff } from 'lucide-react';
 
 export function LoginPage({ onLoginSuccess, onNavigateRegister, onBackHome }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -74,13 +75,21 @@ export function LoginPage({ onLoginSuccess, onNavigateRegister, onBackHome }) {
               <Lock size={16} color="var(--text-muted)" style={{ position: 'absolute', left: 14, top: 13 }} />
               <input
                 className="input"
-                type="password"
+                type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 placeholder="••••••••"
                 required
-                style={{ paddingLeft: 40, borderRadius: 12 }}
+                style={{ paddingLeft: 40, paddingRight: 40, borderRadius: 12 }}
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                style={{ position: 'absolute', right: 12, top: 11, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}
+                title={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
             </div>
           </div>
 
@@ -107,6 +116,8 @@ export function RegisterPage({ onRegisterSuccess, onNavigateLogin, onBackHome })
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [role, setRole] = useState('student');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -191,7 +202,15 @@ export function RegisterPage({ onRegisterSuccess, onNavigateLogin, onBackHome })
             <label className="label" style={{ fontSize: 12, fontWeight: 700, marginBottom: 4, color: 'var(--text-secondary)' }}>Password (Min 8 chars)</label>
             <div style={{ position: 'relative' }}>
               <Lock size={16} color="var(--text-muted)" style={{ position: 'absolute', left: 14, top: 13 }} />
-              <input className="input" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" required style={{ paddingLeft: 40, borderRadius: 12 }} />
+              <input className="input" type={showPassword ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" required style={{ paddingLeft: 40, paddingRight: 40, borderRadius: 12 }} />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                style={{ position: 'absolute', right: 12, top: 11, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}
+                title={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
             </div>
           </div>
 
@@ -199,7 +218,15 @@ export function RegisterPage({ onRegisterSuccess, onNavigateLogin, onBackHome })
             <label className="label" style={{ fontSize: 12, fontWeight: 700, marginBottom: 4, color: 'var(--text-secondary)' }}>Confirm Password</label>
             <div style={{ position: 'relative' }}>
               <ShieldCheck size={16} color="var(--text-muted)" style={{ position: 'absolute', left: 14, top: 13 }} />
-              <input className="input" type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder="••••••••" required style={{ paddingLeft: 40, borderRadius: 12 }} />
+              <input className="input" type={showConfirmPassword ? 'text' : 'password'} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder="••••••••" required style={{ paddingLeft: 40, paddingRight: 40, borderRadius: 12 }} />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                style={{ position: 'absolute', right: 12, top: 11, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}
+                title={showConfirmPassword ? 'Hide password' : 'Show password'}
+              >
+                {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
             </div>
           </div>
 

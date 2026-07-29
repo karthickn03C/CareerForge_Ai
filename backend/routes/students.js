@@ -235,9 +235,10 @@ router.post('/:id/preppilot-history', (req, res) => {
 // ── GET /api/students/staff/analytics ──────────────────────────────────────
 router.get('/staff/analytics', (req, res) => {
   try {
-    const students = queryAll('SELECT * FROM students ORDER BY created_at DESC');
-    const totalStudents = students.length || 24;
-    const activeToday = Math.max(12, Math.round(totalStudents * 0.75));
+    const rawStudents = queryAll("SELECT * FROM students WHERE role != 'staff' OR role IS NULL ORDER BY created_at DESC");
+    const students = rawStudents.slice(0, 10);
+    const totalStudents = students.length;
+    const activeToday = Math.max(1, Math.round(totalStudents * 0.7));
     
     const sampleDomains = ['gmail.com', 'yahoo.com', 'outlook.com', 'college.edu'];
     const studentList = students.map((s, idx) => {
