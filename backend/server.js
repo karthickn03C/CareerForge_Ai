@@ -37,6 +37,17 @@ app.use(cors({
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
 
+// Ensure database is initialized before processing any requests
+app.use(async (_req, _res, next) => {
+  try {
+    await initDb();
+    next();
+  } catch (err) {
+    console.error('Database initialization middleware error:', err);
+    next(err);
+  }
+});
+
 // Request logger
 app.use((req, _res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
