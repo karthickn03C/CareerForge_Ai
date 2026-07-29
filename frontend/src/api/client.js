@@ -148,4 +148,34 @@ export const deleteForgemindConversation = (conversationId) =>
 export const togglePinForgemindConversation = (conversationId) =>
   api.post(`/forgemind/conversations/${conversationId}/pin`).then(r => r.data);
 
+// ── Student Full Profile & Activity ───────────────────────────────────────
+export const getStudentFullProfile = (studentId) =>
+  api.get(`/students/${studentId}/full-profile`).then(r => r.data);
+
+export const getStudentActivityFeed = (studentId) =>
+  api.get(`/students/${studentId}/activity`).then(r => r.data);
+
+export const getStaffActivityFeed = () =>
+  api.get('/students/staff/activity-feed').then(r => r.data);
+
+export const recalculateStudentScores = (studentId) =>
+  api.post(`/students/${studentId}/recalculate`).then(r => r.data);
+
+// ── Reports ───────────────────────────────────────────────────────────────
+export const getWeeklyReport = () =>
+  api.get('/reports/weekly').then(r => r.data);
+
+export const getDepartmentReport = () =>
+  api.get('/reports/department').then(r => r.data);
+
+export const getCSVDownloadUrl = () => {
+  const base = getBaseURL();
+  return `${base}/reports/download/csv`;
+};
+
+export const getJSONDownloadUrl = () => {
+  const base = getBaseURL();
+  return `${base}/reports/download/json`;
+};
+
 export default api;

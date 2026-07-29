@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { queryAll, queryOne, execute } = require('../db/database');
+const { queryAll, queryOne, execute, logActivity, recalculateStudentScores } = require('../db/database');
 const { generatePlan } = require('../agents/plannerAgent');
 const { getWeakAndModerateTopics } = require('../agents/progressAgent');
 
@@ -63,14 +63,14 @@ router.post('/:studentId/generate', async (req, res) => {
       [req.params.studentId, company || null, JSON.stringify(planData)]
     );
 
-    // Update real-time student planner metrics in PostgreSQL
-    execute(
-      `UPDATE students SET 
-        planner_completed = 1, 
-        profile_completion = MIN(100, profile_completion + 20),
-        status = 'Active Now'
-       WHERE id = ?`,
-      [req.params.studentId]
+    // Recalculate all scores (planner completion affects readiness)
+    recalculateStudentScores(req.params.studentId);
+
+    // Log activity and broadcast via SSE
+    logActivity(
+      req.params.studentId, 'plan_generated',
+      `Study plan generated${company ? ` for ${company}` : ''} — ${daysRemaining} days remaining`,
+      { company, daysRemaining, target_date: resolvedDate }
     );
 
     if (target_date) {

@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { queryAll, queryOne, execute } = require('../db/database');
+const { queryAll, queryOne, execute, logActivity, recalculateStudentScores } = require('../db/database');
 const { askQuestion, evaluateAnswer } = require('../agents/interviewAgent');
 const { getWeakestTopic } = require('../agents/progressAgent');
 
@@ -87,17 +87,17 @@ router.post('/session/:sessionId/answer', async (req, res) => {
       ]
     );
 
-    // Update real-time student metrics in PostgreSQL
+    // Update real-time student metrics via recalculation from real data
     if (session.student_id) {
-      const newScore = evaluation.score || 80;
+      recalculateStudentScores(session.student_id);
       execute(
-        `UPDATE students SET 
-          interview_score = ?, 
-          study_hours = study_hours + 1,
-          placement_readiness = MIN(100, CAST((resume_score * 0.35 + coding_score * 0.45 + ? * 0.20) AS INTEGER)),
-          status = 'Active Now'
-         WHERE id = ?`,
-        [newScore, newScore, session.student_id]
+        `UPDATE students SET status = 'Active Now' WHERE id = ?`,
+        [session.student_id]
+      );
+      logActivity(
+        session.student_id, 'interview_completed',
+        `Mock interview completed — Score: ${evaluation.score || 0}%`,
+        { score: evaluation.score, mode: session.mode, question: session.question?.substring(0, 80) }
       );
     }
 

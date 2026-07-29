@@ -4,6 +4,7 @@ const cors = require('cors');
 const { initDb } = require('./db/database');
 
 // Route imports
+const { router: eventsRouter } = require('./routes/events'); // SSE must be imported first to register global broadcaster
 const studentsRouter = require('./routes/students');
 const progressRouter = require('./routes/progress');
 const questionsRouter = require('./routes/questions');
@@ -12,6 +13,7 @@ const plannerRouter = require('./routes/planner');
 const resumeRouter = require('./routes/resume');
 const opportunitiesRouter = require('./routes/opportunities');
 const forgemindRouter = require('./routes/forgemind');
+const reportsRouter = require('./routes/reports');
 const { router: authRouter } = require('./routes/auth');
 
 const app = express();
@@ -55,6 +57,7 @@ app.use((req, _res, next) => {
 });
 
 // ── Routes ─────────────────────────────────────────────────────────────────
+app.use('/api/events', eventsRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/students', studentsRouter);
 app.use('/api/progress', progressRouter);
@@ -64,6 +67,7 @@ app.use('/api/planner', plannerRouter);
 app.use('/api/resume', resumeRouter);
 app.use('/api/opportunities', opportunitiesRouter);
 app.use('/api/forgemind', forgemindRouter);
+app.use('/api/reports', reportsRouter);
 
 // Health check
 app.get('/api/health', (_req, res) => {

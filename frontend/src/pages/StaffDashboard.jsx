@@ -1,15 +1,19 @@
-import { useState, useEffect, useRef } from 'react';
-import { getStaffAnalytics } from '../api/client';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { getStaffAnalytics, getStaffActivityFeed, getStudentFullProfile, getCSVDownloadUrl, getWeeklyReport } from '../api/client';
+import { useSSE } from '../utils/useSSE';
+import ActivityTimeline from '../components/ActivityTimeline';
 import {
   Brain, Users, Award, AlertTriangle, ShieldCheck, Search, Filter,
-  Megaphone, Briefcase, RefreshCw, Send, Sparkles, CheckCircle2, Zap, Clock, Code, FileText, ChevronRight, Download
+  Megaphone, Briefcase, RefreshCw, Send, Sparkles, CheckCircle2, Zap, Clock, Code, FileText, ChevronRight, Download, Activity, TrendingUp
 } from 'lucide-react';
 
 export default function StaffDashboard({ authUser }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('command_center'); // 'command_center' | 'students' | 'drives' | 'announcements' | 'reports'
-  
+  const [activeTab, setActiveTab] = useState('command_center');
+  const [activityFeed, setActivityFeed] = useState([]);
+  const [liveIndicator, setLiveIndicator] = useState(false);
+
   // Search & Filter
   const [search, setSearch] = useState('');
   const [filterRisk, setFilterRisk] = useState('all');
@@ -19,7 +23,7 @@ export default function StaffDashboard({ authUser }) {
     {
       id: 1,
       sender: 'ai',
-      text: `### 🤖 ForgeMind AI — Master Placement Intelligence System\n\nWelcome back, **${authUser?.name || 'Faculty Commander'}**. I am monitoring all student profiles across **Resumes, Coding Practice, Mock Interviews, Study Roadmaps, & Placement Readiness**.\n\nHow can I assist your placement operations today? Select a suggested query below or type your request.`
+      text: `### 🤖 ForgeMind AI — Master Placement Intelligence System\n\nWelcome back, **${authUser?.name || 'Faculty Commander'}**. I am connected to the live PostgreSQL database monitoring all student profiles.\n\nAsk me about any student by name, compare candidates, request reports, or ask who needs intervention.`
     }
   ]);
   const [inputQuery, setInputQuery] = useState('');
@@ -39,10 +43,16 @@ export default function StaffDashboard({ authUser }) {
   async function loadData(showSpinner = false) {
     if (showSpinner) setLoading(true);
     try {
-      const res = await getStaffAnalytics();
-      if (res.success) {
-        setData(res);
-        setDrives(res.placementDrives || []);
+      const [analyticsRes, feedRes] = await Promise.allSettled([
+        getStaffAnalytics(),
+        getStaffActivityFeed()
+      ]);
+      if (analyticsRes.status === 'fulfilled' && analyticsRes.value.success) {
+        setData(analyticsRes.value);
+        setDrives(analyticsRes.value.placementDrives || []);
+      }
+      if (feedRes.status === 'fulfilled' && feedRes.value.success) {
+        setActivityFeed(feedRes.value.activities || []);
       }
     } catch (e) {
       console.warn('Staff analytics fetch note:', e);
@@ -51,20 +61,43 @@ export default function StaffDashboard({ authUser }) {
     }
   }
 
+  // SSE: Replace polling with real-time push events
+  const handleSSEEvent = useCallback((eventType, eventData) => {
+    // Flash live indicator
+    setLiveIndicator(true);
+    setTimeout(() => setLiveIndicator(false), 2500);
+
+    // Add to activity feed immediately
+    if (eventData?.studentId && eventData?.description) {
+      setActivityFeed(prev => [{
+        id: Date.now(),
+        student_id: eventData.studentId,
+        student_name: eventData.metadata?.name || 'Student',
+        event_type: eventType,
+        description: eventData.description,
+        metadata: eventData.metadata || {},
+        created_at: eventData.ts || new Date().toISOString()
+      }, ...prev].slice(0, 50));
+    }
+
+    // Refresh analytics data after any significant event
+    if (['student_registered', 'resume_uploaded', 'coding_solved', 'interview_completed', 'plan_generated'].includes(eventType)) {
+      setTimeout(() => loadData(false), 800);
+    }
+  }, []);
+
+  useSSE(handleSSEEvent, true);
+
   useEffect(() => {
     loadData(true);
-    // Real-Time Sync Polling every 10 seconds for live database monitoring
-    const interval = setInterval(() => {
-      loadData(false);
-    }, 10000);
-    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, aiTyping]);
 
-  function handleSendPrompt(promptText) {
+  // Async ForgeMind AI — uses real full-profile API for named student queries
+  async function handleSendPrompt(promptText) {
     const q = promptText || inputQuery;
     if (!q.trim()) return;
 
@@ -73,42 +106,94 @@ export default function StaffDashboard({ authUser }) {
     if (!promptText) setInputQuery('');
     setAiTyping(true);
 
-    setTimeout(() => {
-      let aiText = '';
+    try {
       const lower = q.toLowerCase();
       const studentsList = data?.students || [];
+      let aiText = '';
 
       // Try to match any real student by name from the query
       const matchedStudent = studentsList.find(s =>
-        lower.includes(s.name.toLowerCase().split(' ')[0].toLowerCase()) ||
+        lower.includes(s.name.toLowerCase().split(' ')[0]) ||
         lower.includes(s.name.toLowerCase())
       );
 
       if (matchedStudent) {
-        const s = matchedStudent;
-        aiText = `### 📊 Student Profile Summary: **${s.name}**\n\n| Metric | Score / Progress |\n| :--- | :--- |\n| **Placement Readiness Index** | **${s.readinessScore}%** |\n| **Resume ATS Score** | **${s.resumeScore}%** |\n| **Coding Score** | **${s.codingScore}%** |\n| **Interview Score** | **${s.interviewScore}%** |\n| **Hours Practiced** | **${s.hoursPracticed} Hours** |\n| **Problems Solved** | **${s.problems_solved || s.leetcode_total_solved || 0} Problems** |\n| **Current Streak** | **${s.current_streak || 0} Days** |\n| **Department** | **${s.department}** |\n| **Status** | **${s.status}** |\n\n#### 🎯 AI Recommendation\n${s.aiRecommendation}\n\n#### 📌 Faculty Action\n- [ ] ${s.isAtRisk ? 'Schedule urgent 1-on-1 remedial session' : 'Nominate for upcoming Tier-1 Placement Drives'}\n- [ ] ${s.resumeScore < 60 ? 'Assign Resume ATS Optimization workshop' : 'Resume is placement-ready'}\n- [ ] ${s.codingScore < 60 ? 'Assign 10 DSA Medium problems this week' : 'Coding performance is strong'}`;
+        // Fetch full profile from API for rich real data
+        try {
+          const profile = await getStudentFullProfile(matchedStudent.id);
+          const s = profile.student;
+          const acts = profile.recentActivity || [];
+          const coding = profile.codingHistory || [];
+          const interviews = profile.interviewSessions || [];
+
+          const activityLines = acts.slice(0, 5).map(a =>
+            `- ${new Date(a.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })} · ${a.description}`
+          ).join('\n') || '- No recent activity recorded';
+
+          const isAtRisk = (s.placement_readiness || 0) < 70;
+          aiText = `### 📊 Student Profile: **${s.name}**
+*${s.department || 'CSE'} · ${s.year || '4th Year'} · ${s.status || 'New Student'}*
+
+| Metric | Score |
+| :--- | :---: |
+| **Placement Readiness** | **${s.placement_readiness}%** |
+| **Resume ATS Score** | ${s.resume_score}% |
+| **Coding Score** | ${s.coding_score}% |
+| **Interview Score** | ${s.interview_score}% |
+| **Study Hours** | ${s.study_hours}h |
+| **Problems Solved** | ${s.problems_solved} |
+| **Current Streak** | 🔥 ${s.current_streak} days |
+
+#### 📈 Recent Activity (Last 5 Events)
+${activityLines}
+
+#### 💻 Coding History (Last ${Math.min(coding.length, 3)} Problems)
+${coding.slice(0, 3).map(c => `- **${c.title}** (${c.difficulty}) · ${c.topic}`).join('\n') || '- No coding history yet'}
+
+#### 🎯 AI Recommendation
+${isAtRisk
+  ? `⚠️ **At Risk** — Placement readiness is below 70%. Recommend immediate 1-on-1 mentoring session, resume ATS workshop, and DSA practice assignment.`
+  : `✅ **Placement Ready** — Strong performance across all metrics. Recommend nominating for Tier-1 drive invitations.`}
+
+#### 📌 Faculty Action Items
+- [ ] ${s.resume_score < 50 ? 'Schedule ATS Resume Optimization workshop' : 'Resume is placement-ready ✓'}
+- [ ] ${s.coding_score < 50 ? 'Assign 10 DSA Medium/Hard problems this week' : 'Coding performance is strong ✓'}
+- [ ] ${s.interview_score < 50 ? 'Schedule mock interview session with faculty' : 'Interview performance is solid ✓'}`;
+        } catch (fetchErr) {
+          // Fallback to analytics data
+          const s = matchedStudent;
+          aiText = `### 📊 Student Summary: **${s.name}**\n\n| Metric | Score |\n| :--- | :---: |\n| **Readiness** | **${s.readinessScore}%** |\n| **Resume** | ${s.resumeScore}% |\n| **Coding** | ${s.codingScore}% |\n| **Interview** | ${s.interviewScore}% |\n\n${s.aiRecommendation}`;
+        }
       } else if (lower.includes('compare')) {
         const top2 = studentsList.slice(0, 2);
         if (top2.length >= 2) {
-          aiText = `### ⚔️ Candidate Performance Comparison\n\n| Candidate Name | Readiness Index | Resume ATS | Coding Score | Interview Score | Problems Solved |\n| :--- | :---: | :---: | :---: | :---: | :---: |\n${top2.map(s => `| **${s.name}** | **${s.readinessScore}%** | ${s.resumeScore}% | ${s.codingScore}% | ${s.interviewScore}% | ${s.problems_solved || 0} |`).join('\n')}\n\n**Key Takeaway**: ${top2[0]?.readinessScore >= top2[1]?.readinessScore ? top2[0]?.name : top2[1]?.name} leads in overall Placement Readiness Index.`;
+          aiText = `### ⚔️ Candidate Comparison\n\n| Candidate | Readiness | Resume | Coding | Interview | Problems |\n| :--- | :---: | :---: | :---: | :---: | :---: |\n${top2.map(s => `| **${s.name}** | **${s.readinessScore}%** | ${s.resumeScore}% | ${s.codingScore}% | ${s.interviewScore}% | ${s.problems_solved || 0} |`).join('\n')}\n\n**Takeaway**: ${top2[0].readinessScore >= top2[1].readinessScore ? top2[0].name : top2[1].name} leads in Placement Readiness.`;
         } else {
-          aiText = `### ⚔️ Candidate Comparison\n\nNot enough students registered yet to compare. Please register more students first.`;
+          aiText = `Not enough students registered to compare. Ask students to register and use the platform.`;
         }
       } else if (lower.includes('intervention') || lower.includes('risk') || lower.includes('attention')) {
         const atRisk = studentsList.filter(s => s.isAtRisk);
-        aiText = `### ⚠️ Candidates Requiring Immediate Faculty Intervention (${atRisk.length} Students)\n\nThese candidates have a Placement Readiness Index below 70%:\n\n${(atRisk.length > 0 ? atRisk : studentsList.slice(0, 3)).map(s => `- **${s.name}** (${s.email}) — Readiness: **${s.readinessScore}%** — Dept: ${s.department}`).join('\n')}\n\n**Action Recommended**: Assign targeted remedial practice modules & schedule resume feedback session.`;
-      } else if (lower.includes('amazon') || lower.includes('google') || lower.includes('ready') || lower.includes('eligible') || lower.includes('tier')) {
-        const ready = studentsList.filter(s => s.readinessScore >= 80);
-        aiText = `### 🎯 Tier-1 Tech Placement Drive Eligible Candidates (${ready.length} Students)\n\nCandidates with Placement Readiness Score ≥ 80%:\n\n| Candidate Name | Department | Readiness Score | Resume ATS | Status |\n| :--- | :---: | :---: | :---: | :---: |\n${(ready.length > 0 ? ready : studentsList).slice(0, 5).map(s => `| **${s.name}** | ${s.department} | **${s.readinessScore}%** | ${s.resumeScore}% | ${s.isAtRisk ? '⚠️ At Risk' : '✅ Qualified'} |`).join('\n')}\n\n**AI Recommendation**: ${ready.length > 0 ? `Broadcast Tier-1 Drive invitations to these ${ready.length} candidates.` : 'No candidates meet the 80% threshold yet. Continue monitoring.'}`;
+        aiText = `### ⚠️ Students Requiring Intervention (${atRisk.length})\n\n${(atRisk.length > 0 ? atRisk : studentsList.slice(0, 3)).map(s => `- **${s.name}** (${s.department}) — Readiness: **${s.readinessScore}%**`).join('\n') || 'No at-risk students found.'}\n\n**Action**: Assign remedial modules & schedule resume feedback sessions.`;
+      } else if (lower.includes('ready') || lower.includes('eligible') || lower.includes('tier') || lower.includes('amazon') || lower.includes('google')) {
+        const ready = studentsList.filter(s => s.readinessScore >= 75);
+        aiText = `### 🎯 Placement-Ready Candidates (${ready.length})\n\n| Name | Dept | Readiness | Status |\n| :--- | :---: | :---: | :---: |\n${(ready.length > 0 ? ready : studentsList).slice(0, 6).map(s => `| **${s.name}** | ${s.department} | **${s.readinessScore}%** | ${s.isAtRisk ? '⚠️ At Risk' : '✅ Ready'} |`).join('\n')}\n\n${ready.length > 0 ? `**Recommendation**: Send Tier-1 drive invitations to ${ready.length} candidates.` : 'No candidates at 75%+ yet.'}`;
       } else if (lower.includes('report') || lower.includes('weekly') || lower.includes('summary')) {
-        aiText = `### 📑 Executive Weekly Placement Performance Report\n\n- **Total Batch Candidates**: ${data?.stats?.totalStudents || 0} Candidates\n- **Batch Avg Readiness Index**: **${data?.stats?.avgReadinessScore || 0}%**\n- **Tier-1 Eligible Candidates**: **${data?.stats?.eligibleForDrives || 0} Students**\n- **Candidates At Risk**: **${data?.stats?.studentsAtRisk || 0} Students**\n- **Active Today**: **${data?.stats?.activeToday || 0} Students**\n\n*Report automatically generated from live PostgreSQL analytics.*`;
+        try {
+          const report = await getWeeklyReport();
+          aiText = `### 📑 Weekly Placement Report\n\n**Period**: Last 7 Days · Generated: ${new Date().toLocaleDateString()}\n\n| Metric | Value |\n| :--- | :---: |\n| **Total Students** | **${report.summary?.totalStudents || 0}** |\n| **Avg Readiness** | **${report.summary?.avgPlacementReadiness || 0}%** |\n| **Eligible for Drives** | **${report.summary?.eligibleForDrives || 0}** |\n| **At Risk** | **${report.summary?.atRisk || 0}** |\n| **New Registrations** | ${report.summary?.weeklyActivity?.newRegistrations || 0} |\n| **Resumes Uploaded** | ${report.summary?.weeklyActivity?.resumesUploaded || 0} |\n| **Coding Problems Solved** | ${report.summary?.weeklyActivity?.codingProblems || 0} |\n| **Mock Interviews** | ${report.summary?.weeklyActivity?.mockInterviews || 0} |\n\n*Data sourced from live PostgreSQL. Download CSV for full export.*`;
+        } catch(e) {
+          aiText = `### 📑 Weekly Report\n\n- **Total Candidates**: ${data?.stats?.totalStudents || 0}\n- **Avg Readiness**: ${data?.stats?.avgReadinessScore || 0}%\n- **Eligible**: ${data?.stats?.eligibleForDrives || 0}\n- **At Risk**: ${data?.stats?.studentsAtRisk || 0}`;
+        }
       } else {
-        aiText = `### 🤖 ForgeMind Intelligence Insights\n\nBased on real-time database tracking for: **"${q}"**\n\n- **Total Candidates Monitored**: ${data?.stats?.totalStudents || 0} Students\n- **Active Today**: ${data?.stats?.activeToday || 0} Candidates online\n- **Avg Readiness Index**: ${data?.stats?.avgReadinessScore || 0}%\n- **Eligible for Drives**: ${data?.stats?.eligibleForDrives || 0} Students\n\n${studentsList.length > 0 ? `You can ask me about any student by name — e.g. "How is ${studentsList[0]?.name} progressing?"` : 'No students registered yet. Students will appear here once they create accounts.'}\n\nFaculty action recommended: Review **At Risk** candidates in the Roster below.`;
+        aiText = `### 🤖 ForgeMind Intelligence\n\n**Query**: "${q}"\n\n**Live Stats**:\n- Total Candidates: **${data?.stats?.totalStudents || 0}**\n- Active Today: **${data?.stats?.activeToday || 0}**\n- Avg Readiness: **${data?.stats?.avgReadinessScore || 0}%**\n- Placement Ready: **${data?.stats?.eligibleForDrives || 0}**\n\n${studentsList.length > 0 ? `💡 Try asking: *"How is ${studentsList[0]?.name?.split(' ')[0]} progressing?"* or *"Who needs intervention?"*` : 'No students registered yet.'}`;
       }
 
       setMessages(prev => [...prev, { id: Date.now() + 1, sender: 'ai', text: aiText }]);
+    } catch (err) {
+      setMessages(prev => [...prev, { id: Date.now() + 1, sender: 'ai', text: `⚠️ Error fetching data: ${err.message}` }]);
+    } finally {
       setAiTyping(false);
-    }, 500);
+    }
   }
 
   function handleAddAnnouncement(e) {
@@ -133,6 +218,16 @@ export default function StaffDashboard({ authUser }) {
     setNewDrive({ company: '', role: '', minScore: '80', deadline: '2026-08-15' });
   }
 
+  function handleDownloadCSV() {
+    const url = getCSVDownloadUrl();
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `careerforge_students_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
   const filteredStudents = (data?.students || []).filter(s => {
     const matchesSearch = s.name.toLowerCase().includes(search.toLowerCase()) || s.email.toLowerCase().includes(search.toLowerCase());
     if (filterRisk === 'atRisk') return matchesSearch && s.isAtRisk;
@@ -146,8 +241,8 @@ export default function StaffDashboard({ authUser }) {
     'Compare top 2 candidates.',
     'Who needs intervention?',
     'Who is placement ready?',
-    'Who is eligible for Tier-1 drives?',
-    'Generate weekly placement report.'
+    'Generate weekly report.',
+    'Who is eligible for Tier-1 drives?'
   ];
 
   if (loading) {
@@ -175,18 +270,27 @@ export default function StaffDashboard({ authUser }) {
             <h1 style={{ fontSize: 20, fontWeight: 900, color: '#F8FAFC', margin: 0, letterSpacing: '-0.3px' }}>
               ForgeMind AI <span style={{ color: '#10B981', fontSize: 14, fontWeight: 700 }}>Command Center</span>
             </h1>
-            <p style={{ fontSize: 12, color: '#94A3B8', margin: 0 }}>Master Placement Intelligence System · Faculty Portal</p>
+            <p style={{ fontSize: 12, color: '#94A3B8', margin: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{
+                display: 'inline-block', width: 7, height: 7, borderRadius: '50%',
+                background: liveIndicator ? '#F59E0B' : '#10B981',
+                boxShadow: `0 0 0 ${liveIndicator ? '4' : '3'}px ${liveIndicator ? 'rgba(245,158,11,0.3)' : 'rgba(16,185,129,0.25)'}`,
+                transition: 'all 0.3s'
+              }} />
+              {liveIndicator ? 'Event received — syncing...' : 'Live · Real-time SSE connected'}
+            </p>
           </div>
         </div>
 
         {/* Section Navigation Tabs */}
         <div style={{ display: 'flex', gap: 8, background: '#161D2F', padding: 4, borderRadius: 14, border: '1px solid rgba(255,255,255,0.08)' }}>
-          {[
+        {[
             { id: 'command_center', label: '🤖 AI Command Center' },
             { id: 'students', label: '👥 Student Roster' },
+            { id: 'activity', label: '⚡ Live Feed' },
             { id: 'drives', label: '🏢 Placement Drives' },
             { id: 'announcements', label: '📢 Announcements' },
-            { id: 'reports', label: '📊 Reports & Analytics' }
+            { id: 'reports', label: '📊 Reports' }
           ].map(t => (
             <button
               key={t.id}
@@ -502,31 +606,93 @@ export default function StaffDashboard({ authUser }) {
         </div>
       )}
 
-      {/* Tab 4: Reports & Analytics */}
+      {/* Tab: Live Activity Feed */}
+      {activeTab === 'activity' && (
+        <div style={{ marginBottom: 28 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <h3 style={{ fontSize: 16, fontWeight: 800, color: '#F8FAFC', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Activity size={18} color="#10B981" /> Real-Time Student Activity Feed
+              <span style={{
+                fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 20,
+                background: liveIndicator ? 'rgba(245,158,11,0.15)' : 'rgba(16,185,129,0.12)',
+                color: liveIndicator ? '#F59E0B' : '#10B981',
+                border: `1px solid ${liveIndicator ? 'rgba(245,158,11,0.3)' : 'rgba(16,185,129,0.3)'}`,
+                transition: 'all 0.3s'
+              }}>
+                {liveIndicator ? '⚡ Syncing...' : '🟢 Live'}
+              </span>
+            </h3>
+            <span style={{ fontSize: 11, color: '#64748B' }}>{activityFeed.length} events tracked</span>
+          </div>
+          <ActivityTimeline
+            activities={activityFeed}
+            showStudent={true}
+            dark={true}
+            title="Live Activity Feed"
+            maxItems={15}
+          />
+        </div>
+      )}
+
+      {/* Tab: Reports & Analytics */}
       {activeTab === 'reports' && (
         <div style={{ background: '#161D2F', padding: 24, borderRadius: 20, border: '1px solid rgba(255,255,255,0.06)', marginBottom: 28 }}>
           <h3 style={{ fontSize: 18, fontWeight: 800, color: '#F8FAFC', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Download size={20} color="#10B981" /> Institutional Placement Reports & Exports
+            <Download size={20} color="#10B981" /> Placement Reports & Data Exports
           </h3>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
             <div style={{ padding: 20, borderRadius: 14, background: '#0F172A', border: '1px solid rgba(255,255,255,0.08)' }}>
-              <h4 style={{ margin: '0 0 6px', color: '#F8FAFC' }}>📊 Weekly Batch Analytics PDF</h4>
-              <p style={{ fontSize: 12, color: '#94A3B8' }}>Summary of DSA solved, resume scores, & readiness trends.</p>
-              <button style={{ width: '100%', padding: 10, borderRadius: 8, border: 'none', background: '#10B981', color: '#FFF', fontWeight: 800, marginTop: 8, cursor: 'pointer' }} onClick={() => alert('Exporting Weekly Batch Analytics PDF...')}>Export PDF</button>
+              <h4 style={{ margin: '0 0 6px', color: '#F8FAFC' }}>📊 Full Student Export (CSV)</h4>
+              <p style={{ fontSize: 12, color: '#94A3B8' }}>All students with resume scores, coding scores, interview scores, placement readiness. Opens in Excel.</p>
+              <button
+                style={{ width: '100%', padding: 10, borderRadius: 8, border: 'none', background: '#10B981', color: '#FFF', fontWeight: 800, marginTop: 8, cursor: 'pointer' }}
+                onClick={handleDownloadCSV}
+              >
+                ⬇ Download CSV (Excel)
+              </button>
             </div>
             <div style={{ padding: 20, borderRadius: 14, background: '#0F172A', border: '1px solid rgba(255,255,255,0.08)' }}>
-              <h4 style={{ margin: '0 0 6px', color: '#F8FAFC' }}>📑 Placement Drive Eligibility Excel</h4>
-              <p style={{ fontSize: 12, color: '#94A3B8' }}>Complete list of eligible candidates filtered by company cutoffs.</p>
-              <button style={{ width: '100%', padding: 10, borderRadius: 8, border: 'none', background: '#06B6D4', color: '#FFF', fontWeight: 800, marginTop: 8, cursor: 'pointer' }} onClick={() => alert('Exporting Eligibility Excel...')}>Export Excel</button>
+              <h4 style={{ margin: '0 0 6px', color: '#F8FAFC' }}>📑 Full Data Export (JSON)</h4>
+              <p style={{ fontSize: 12, color: '#94A3B8' }}>Complete JSON export of all student records for external tools and integrations.</p>
+              <button
+                style={{ width: '100%', padding: 10, borderRadius: 8, border: 'none', background: '#06B6D4', color: '#FFF', fontWeight: 800, marginTop: 8, cursor: 'pointer' }}
+                onClick={() => { window.open(import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL + '/reports/download/json' : 'https://careerforge-ai-2bbv.onrender.com/api/reports/download/json', '_blank'); }}
+              >
+                ⬇ Download JSON
+              </button>
             </div>
             <div style={{ padding: 20, borderRadius: 14, background: '#0F172A', border: '1px solid rgba(255,255,255,0.08)' }}>
-              <h4 style={{ margin: '0 0 6px', color: '#F8FAFC' }}>⚠️ Students At Risk Report</h4>
-              <p style={{ fontSize: 12, color: '#94A3B8' }}>Detailed AI breakdown of students requiring faculty intervention.</p>
-              <button style={{ width: '100%', padding: 10, borderRadius: 8, border: 'none', background: '#EF4444', color: '#FFF', fontWeight: 800, marginTop: 8, cursor: 'pointer' }} onClick={() => alert('Exporting Risk Report...')}>Export PDF</button>
+              <h4 style={{ margin: '0 0 6px', color: '#F8FAFC' }}>⚠️ At-Risk Student Report</h4>
+              <p style={{ fontSize: 12, color: '#94A3B8' }}>
+                {(data?.stats?.studentsAtRisk || 0)} students below 70% readiness. Download CSV to see details.
+              </p>
+              <button
+                style={{ width: '100%', padding: 10, borderRadius: 8, border: 'none', background: '#EF4444', color: '#FFF', fontWeight: 800, marginTop: 8, cursor: 'pointer' }}
+                onClick={handleDownloadCSV}
+              >
+                ⬇ Export At-Risk CSV
+              </button>
+            </div>
+            <div style={{ padding: 20, borderRadius: 14, background: '#0F172A', border: '1px solid rgba(16,185,129,0.2)' }}>
+              <h4 style={{ margin: '0 0 6px', color: '#10B981' }}>📈 Live Quick Stats</h4>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10 }}>
+                {[
+                  { label: 'Total Students', value: data?.stats?.totalStudents || 0 },
+                  { label: 'Avg Readiness', value: `${data?.stats?.avgReadinessScore || 0}%` },
+                  { label: 'Eligible', value: data?.stats?.eligibleForDrives || 0 },
+                  { label: 'At Risk', value: data?.stats?.studentsAtRisk || 0 }
+                ].map((item, i) => (
+                  <div key={i} style={{ padding: '8px 12px', background: '#161D2F', borderRadius: 8, textAlign: 'center' }}>
+                    <div style={{ fontSize: 18, fontWeight: 900, color: '#10B981' }}>{item.value}</div>
+                    <div style={{ fontSize: 10, color: '#64748B', fontWeight: 600 }}>{item.label}</div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
       )}
     </div>
   );
+
 }

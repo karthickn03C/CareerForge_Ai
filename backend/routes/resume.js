@@ -3,7 +3,7 @@ const router = express.Router();
 const multer = require('multer');
 const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
-const { queryOne, execute } = require('../db/database');
+const { queryOne, execute, logActivity, recalculateStudentScores } = require('../db/database');
 const {
   parseResumeWithAI,
   analyzeATSWithAI,
@@ -173,16 +173,20 @@ router.post('/:studentId/upload', upload.single('resume'), async (req, res) => {
       [studentId, fileName, fileType, rawText, parsedJsonStr, atsScoresStr, feedbackStr]
     );
 
-    // Update real-time student record metrics
-    const overallAtsScore = atsResult?.atsScores?.overallScore || 85;
+    // Update real-time student resume_score (from ATS), then recalculate all scores
+    const overallAtsScore = atsResult?.atsScores?.overallScore || 80;
     execute(
-      `UPDATE students SET 
-        resume_uploaded = 1, 
-        resume_score = ?, 
-        placement_readiness = MIN(100, CAST((? * 0.35 + coding_score * 0.45 + interview_score * 0.20) AS INTEGER)),
-        status = 'Active Now'
-       WHERE id = ? OR email = (SELECT email FROM users WHERE id = ?)`,
-      [overallAtsScore, overallAtsScore, studentId, studentId]
+      `UPDATE students SET resume_uploaded = 1, resume_score = ?, status = 'Active Now' WHERE id = ?`,
+      [overallAtsScore, studentId]
+    );
+
+    // Recalculate all scores from real activity data
+    recalculateStudentScores(studentId);
+
+    // Log activity and broadcast via SSE
+    logActivity(studentId, 'resume_uploaded',
+      `Resume analyzed — ATS Score: ${overallAtsScore}%`,
+      { fileName, atsScore: overallAtsScore }
     );
 
     res.status(201).json({

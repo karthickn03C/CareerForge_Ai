@@ -78,6 +78,12 @@ export default function App() {
     }
   }
 
+  // Called by child pages after any student activity to refresh scores immediately
+  function handleStudentUpdate() {
+    const sid = authUser?.studentId || authUser?.id;
+    if (sid) loadStudentData(sid);
+  }
+
   function handleAuthSuccess(user, token) {
     if (!user) return;
     setAuthUser(user);
@@ -99,6 +105,7 @@ export default function App() {
   const toggleTheme = () => {
     setTheme(prev => (prev === 'light' ? 'dark' : 'light'));
   };
+
 
   if (loadingSession) {
     return (
@@ -267,12 +274,12 @@ export default function App() {
 
           {/* Main Protected Student Content View */}
           <main style={{ flex: 1, padding: '28px 36px', overflowY: 'auto' }}>
-            {activeTab === 'forgemind' && <ForgeMind student={student || { id: authUser.studentId, name: authUser.name }} theme={theme} onNavigate={(tab) => setActiveTab(tab)} />}
+            {activeTab === 'forgemind' && <ForgeMind student={student || { id: authUser.studentId, name: authUser.name }} theme={theme} onNavigate={(tab) => setActiveTab(tab)} onStudentUpdate={handleStudentUpdate} />}
             {activeTab === 'progress' && <MyProgress student={student || { id: authUser.studentId, name: authUser.name }} theme={theme} onStudentUpdate={setStudent} />}
-            {activeTab === 'practice' && <Practice student={student || { id: authUser.studentId, name: authUser.name }} theme={theme} />}
-            {activeTab === 'interview' && <Interview student={student || { id: authUser.studentId, name: authUser.name }} theme={theme} />}
-            {activeTab === 'plan' && <MyPlan student={student || { id: authUser.studentId, name: authUser.name }} theme={theme} />}
-            {activeTab === 'resume' && <ResumeAnalyzer student={student || { id: authUser.studentId, name: authUser.name }} theme={theme} />}
+            {activeTab === 'practice' && <Practice student={student || { id: authUser.studentId, name: authUser.name }} theme={theme} onStudentUpdate={handleStudentUpdate} />}
+            {activeTab === 'interview' && <Interview student={student || { id: authUser.studentId, name: authUser.name }} theme={theme} onStudentUpdate={handleStudentUpdate} />}
+            {activeTab === 'plan' && <MyPlan student={student || { id: authUser.studentId, name: authUser.name }} theme={theme} onStudentUpdate={handleStudentUpdate} />}
+            {activeTab === 'resume' && <ResumeAnalyzer student={student || { id: authUser.studentId, name: authUser.name }} theme={theme} onStudentUpdate={handleStudentUpdate} />}
             {activeTab === 'opportunities' && <Opportunities student={student || { id: authUser.studentId, name: authUser.name }} theme={theme} />}
           </main>
         </div>

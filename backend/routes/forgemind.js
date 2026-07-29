@@ -5,7 +5,7 @@ const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
 
 const { processChatMessage } = require('../agents/forgemindAgent');
-const { queryAll, queryOne, execute } = require('../db/database');
+const { queryAll, queryOne, execute, logActivity, recalculateStudentScores } = require('../db/database');
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -147,16 +147,14 @@ router.post('/:studentId/chat', upload.single('file'), async (req, res) => {
       [agentMsgId, conversationId, 'agent', result.markdownResponse, JSON.stringify(result.agentOutputs)]
     );
 
-    // Update real-time student activity in PostgreSQL
+    // Update real-time student activity (recalculate scores + log event)
     try {
-      execute(
-        `UPDATE students SET 
-          last_login = datetime('now'),
-          status = 'Active Now',
-          study_hours = study_hours + 1,
-          profile_completion = MIN(100, profile_completion + 5)
-         WHERE id = ?`,
-        [studentId]
+      recalculateStudentScores(studentId);
+      execute(`UPDATE students SET last_login = datetime('now'), status = 'Active Now' WHERE id = ?`, [studentId]);
+      logActivity(
+        studentId, 'forgemind_chat',
+        `Used ForgeMind AI: "${userQuery.substring(0, 60)}${userQuery.length > 60 ? '...' : ''}"`,
+        { query: userQuery.substring(0, 120), conversationId }
       );
     } catch (activityErr) {
       console.warn('[ForgeMind Activity Update]', activityErr.message);

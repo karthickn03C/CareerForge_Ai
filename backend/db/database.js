@@ -261,6 +261,23 @@ function initializeSchema() {
     );
   `);
 
+  // ── Activity Timeline Table ─────────────────────────────────────────────
+  db.run(`
+    CREATE TABLE IF NOT EXISTS student_activity (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      student_id  INTEGER NOT NULL,
+      event_type  TEXT    NOT NULL,
+      description TEXT,
+      metadata    TEXT,
+      created_at  TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE
+    );
+  `);
+
+  // Safe migrations for existing databases
+  try { db.run('CREATE INDEX IF NOT EXISTS idx_activity_student ON student_activity(student_id, created_at DESC)'); } catch(e) {}
+  try { db.run('CREATE INDEX IF NOT EXISTS idx_activity_event ON student_activity(event_type, created_at DESC)'); } catch(e) {}
+
   console.log('✅ Database schema initialized');
   seedStaffAccounts();
 }
@@ -348,4 +365,135 @@ function execute(sql, params = []) {
   };
 }
 
-module.exports = { initDb, queryAll, queryOne, execute, persistDb };
+/**
+ * Log a student activity event to the student_activity table.
+ * Also broadcasts to SSE clients if the broadcaster is registered.
+ */
+function logActivity(studentId, eventType, description, metadata = {}) {
+  try {
+    if (!studentId || !eventType) return;
+    execute(
+      `INSERT INTO student_activity (student_id, event_type, description, metadata)
+       VALUES (?, ?, ?, ?)`,
+      [studentId, eventType, description || '', JSON.stringify(metadata)]
+    );
+    // Broadcast to SSE clients if broadcaster is registered
+    if (global.__ssebroadcast) {
+      global.__ssebroadcast(eventType, { studentId, description, metadata, ts: new Date().toISOString() });
+    }
+  } catch (e) {
+    console.warn('[logActivity error]', e.message);
+  }
+}
+
+/**
+ * Recalculate all scores for a student from raw activity data.
+ * Weights: Resume 25%, Coding 30%, Interview 20%, Projects 15%, Planner 10%
+ */
+function recalculateStudentScores(studentId) {
+  try {
+    const student = queryOne('SELECT * FROM students WHERE id = ?', [studentId]);
+    if (!student) return;
+
+    // Coding Score: weighted by difficulty from preppilot_coding_history
+    const codingHistory = queryAll(
+      'SELECT difficulty FROM preppilot_coding_history WHERE student_id = ?',
+      [studentId]
+    );
+    let codingPoints = 0;
+    for (const entry of codingHistory) {
+      const d = (entry.difficulty || 'medium').toLowerCase();
+      if (d === 'easy') codingPoints += 1;
+      else if (d === 'medium') codingPoints += 2;
+      else if (d === 'hard') codingPoints += 4;
+      else codingPoints += 2;
+    }
+    // Normalize: 30 hard problems = 100%
+    const codingScore = Math.min(100, Math.round((codingPoints / 120) * 100));
+
+    // Interview Score: average of all session scores
+    const sessions = queryAll(
+      'SELECT score FROM interview_sessions WHERE student_id = ? AND score IS NOT NULL',
+      [studentId]
+    );
+    const interviewScore = sessions.length > 0
+      ? Math.min(100, Math.round(sessions.reduce((s, r) => s + (r.score || 0), 0) / sessions.length))
+      : (student.interview_score || 0);
+
+    // Current Streak: consecutive days with activity
+    const activityDays = queryAll(
+      `SELECT DISTINCT date(created_at) as day FROM student_activity 
+       WHERE student_id = ? ORDER BY day DESC LIMIT 30`,
+      [studentId]
+    );
+    let streak = 0;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    for (let i = 0; i < activityDays.length; i++) {
+      const dayDate = new Date(activityDays[i].day);
+      const expected = new Date(today);
+      expected.setDate(today.getDate() - i);
+      if (dayDate.toDateString() === expected.toDateString()) {
+        streak++;
+      } else {
+        break;
+      }
+    }
+
+    // Study Hours: count activity events as 0.5h each (rough estimate)
+    const activityCount = queryOne(
+      'SELECT COUNT(*) as cnt FROM student_activity WHERE student_id = ?',
+      [studentId]
+    );
+    const studyHours = Math.round((activityCount?.cnt || 0) * 0.5);
+
+    // Planner score: 0 or 100
+    const hasPlan = queryOne('SELECT id FROM plans WHERE student_id = ?', [studentId]);
+    const plannerScore = hasPlan ? 100 : 0;
+
+    // Resume score from students table (already set by ATS analysis)
+    const resumeScore = student.resume_score || 0;
+    const problemsSolved = codingHistory.length;
+
+    // Placement Readiness: Resume 25% + Coding 30% + Interview 20% + Projects(approx from resume) 15% + Planner 10%
+    const projectsScore = Math.min(100, resumeScore * 0.8); // approximation from resume
+    const readiness = Math.round(
+      resumeScore * 0.25 +
+      codingScore * 0.30 +
+      interviewScore * 0.20 +
+      projectsScore * 0.15 +
+      plannerScore * 0.10
+    );
+
+    execute(
+      `UPDATE students SET
+        coding_score = ?,
+        interview_score = ?,
+        current_streak = ?,
+        study_hours = ?,
+        problems_solved = ?,
+        placement_readiness = ?,
+        profile_completion = MIN(100, 20 + ? + ? + ? + ?)
+       WHERE id = ?`,
+      [
+        codingScore,
+        interviewScore,
+        streak,
+        studyHours,
+        problemsSolved,
+        readiness,
+        (resumeScore > 0 ? 20 : 0),
+        (codingScore > 0 ? 15 : 0),
+        (interviewScore > 0 ? 15 : 0),
+        (hasPlan ? 10 : 0),
+        studentId
+      ]
+    );
+    return { codingScore, interviewScore, streak, studyHours, problemsSolved, readiness };
+  } catch (e) {
+    console.warn('[recalculateStudentScores error]', e.message);
+    return null;
+  }
+}
+
+module.exports = { initDb, queryAll, queryOne, execute, persistDb, logActivity, recalculateStudentScores };

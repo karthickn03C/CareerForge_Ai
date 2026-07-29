@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { queryOne, queryAll, execute } = require('../db/database');
+const { queryOne, queryAll, execute, logActivity } = require('../db/database');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'careerforge_super_secret_jwt_key_2026';
 
@@ -101,6 +101,11 @@ router.post('/register', async (req, res) => {
       { expiresIn: '7d' }
     );
 
+    // Log registration activity
+    logActivity(student.id, 'student_registered', `${name.trim()} joined CareerForge AI`, {
+      name: name.trim(), email: normalizedEmail
+    });
+
     res.status(201).json({
       success: true,
       message: 'Account created successfully!',
@@ -179,6 +184,11 @@ router.post('/login', async (req, res) => {
       JWT_SECRET,
       { expiresIn: '7d' }
     );
+
+    // Log login activity (non-staff users only)
+    if (userRole === 'student') {
+      logActivity(studentRecord.id, 'login', `${account.name} logged in`, { email: account.email });
+    }
 
     console.log(`[LOGIN ATTEMPT] SUCCESS - User: "${account.email}", Role: "${userRole}"`);
 

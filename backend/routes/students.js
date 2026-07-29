@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { queryAll, queryOne, execute } = require('../db/database');
+const { queryAll, queryOne, execute, logActivity, recalculateStudentScores } = require('../db/database');
 
 // GET all students
 router.get('/', (req, res) => {
@@ -228,17 +228,15 @@ router.post('/:id/preppilot-history', (req, res) => {
     [id, title, topic, difficulty || 'medium', language || 'python']
   );
 
-  // Update real-time student coding metrics in PostgreSQL
-  execute(
-    `UPDATE students SET 
-      problems_solved = problems_solved + 1,
-      coding_score = MIN(98, coding_score + 2),
-      study_hours = study_hours + 1,
-      current_streak = current_streak + 1,
-      placement_readiness = MIN(100, CAST((resume_score * 0.35 + MIN(98, coding_score + 2) * 0.45 + interview_score * 0.20) AS INTEGER)),
-      status = 'Active Now'
-     WHERE id = ?`,
-    [id]
+  // Recalculate all scores from real activity data (difficulty-weighted)
+  recalculateStudentScores(id);
+  execute(`UPDATE students SET status = 'Active Now' WHERE id = ?`, [id]);
+
+  // Log activity and broadcast via SSE
+  const diffLabel = (difficulty || 'medium');
+  logActivity(id, 'coding_solved',
+    `Solved "${title}" — ${diffLabel.charAt(0).toUpperCase() + diffLabel.slice(1)} (${topic})`,
+    { title, topic, difficulty, language }
   );
 
   const newEntry = queryOne(`SELECT * FROM preppilot_coding_history WHERE id = ?`, [result.lastInsertRowid]);
@@ -312,6 +310,96 @@ router.get('/staff/analytics', (req, res) => {
     console.error('Staff analytics error:', err);
     res.status(500).json({ error: 'Failed to generate staff analytics' });
   }
+});
+
+// ── GET /api/students/:id/full-profile ─────────────────────────────────────────
+// Returns complete student profile with activity, resume, coding, interview history
+router.get('/:id/full-profile', (req, res) => {
+  const { id } = req.params;
+  const student = queryOne('SELECT * FROM students WHERE id = ?', [id]);
+  if (!student) return res.status(404).json({ error: 'Student not found' });
+
+  const recentActivity = queryAll(
+    `SELECT event_type, description, metadata, created_at FROM student_activity
+     WHERE student_id = ? ORDER BY created_at DESC LIMIT 15`,
+    [id]
+  ).map(a => ({ ...a, metadata: a.metadata ? JSON.parse(a.metadata) : {} }));
+
+  const codingHistory = queryAll(
+    'SELECT title, topic, difficulty, language, date_solved FROM preppilot_coding_history WHERE student_id = ? ORDER BY date_solved DESC LIMIT 10',
+    [id]
+  );
+
+  const interviewSessions = queryAll(
+    'SELECT mode, score, created_at FROM interview_sessions WHERE student_id = ? ORDER BY created_at DESC LIMIT 5',
+    [id]
+  );
+
+  const latestResume = queryOne(
+    'SELECT file_name, ats_scores, uploaded_at FROM resume_analyses WHERE student_id = ? ORDER BY uploaded_at DESC LIMIT 1',
+    [id]
+  );
+  if (latestResume?.ats_scores) {
+    try { latestResume.ats_scores = JSON.parse(latestResume.ats_scores); } catch(e) {}
+  }
+
+  const plan = queryOne(
+    'SELECT target_company, generated_at FROM plans WHERE student_id = ? ORDER BY generated_at DESC LIMIT 1',
+    [id]
+  );
+
+  res.json({
+    student: {
+      id: student.id,
+      name: student.name,
+      email: student.email,
+      department: student.department,
+      year: student.year,
+      resume_score: student.resume_score || 0,
+      coding_score: student.coding_score || 0,
+      interview_score: student.interview_score || 0,
+      placement_readiness: student.placement_readiness || 0,
+      study_hours: student.study_hours || 0,
+      problems_solved: student.problems_solved || 0,
+      current_streak: student.current_streak || 0,
+      status: student.status || 'New Student',
+      last_login: student.last_login,
+      created_at: student.created_at,
+    },
+    recentActivity,
+    codingHistory,
+    interviewSessions,
+    latestResume,
+    plan
+  });
+});
+
+// ── GET /api/students/staff/activity-feed ──────────────────────────────────
+// Returns last 50 activity events across all non-staff students for Staff Portal feed
+router.get('/staff/activity-feed', (req, res) => {
+  try {
+    const activities = queryAll(
+      `SELECT sa.id, sa.student_id, sa.event_type, sa.description, sa.metadata, sa.created_at,
+              s.name as student_name, s.department
+       FROM student_activity sa
+       JOIN students s ON sa.student_id = s.id
+       WHERE s.role = 'student' OR s.role IS NULL
+       ORDER BY sa.created_at DESC LIMIT 50`
+    ).map(a => ({ ...a, metadata: a.metadata ? JSON.parse(a.metadata) : {} }));
+    res.json({ success: true, activities });
+  } catch (err) {
+    console.error('Activity feed error:', err);
+    res.status(500).json({ error: 'Failed to load activity feed' });
+  }
+});
+
+// ── POST /api/students/:id/recalculate ───────────────────────────────────────
+// Force recalculate all scores for a student from raw activity data
+router.post('/:id/recalculate', (req, res) => {
+  const scores = recalculateStudentScores(req.params.id);
+  if (!scores) return res.status(404).json({ error: 'Student not found or recalculation failed' });
+  const student = queryOne('SELECT * FROM students WHERE id = ?', [req.params.id]);
+  res.json({ success: true, scores, student });
 });
 
 module.exports = router;
