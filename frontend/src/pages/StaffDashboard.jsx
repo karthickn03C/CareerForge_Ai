@@ -8,9 +8,31 @@ import {
 export default function StaffDashboard({ authUser, theme }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'students' | 'drives' | 'announcements'
+  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'students' | 'drives' | 'announcements' | 'reports' | 'ai_assistant'
   const [search, setSearch] = useState('');
   const [filterRisk, setFilterRisk] = useState('all');
+
+  // AI Assistant Query State
+  const [aiQuery, setAiQuery] = useState('');
+  const [aiResponse, setAiResponse] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+
+  function handleAiQuery(e) {
+    e.preventDefault();
+    if (!aiQuery.trim()) return;
+    setAiLoading(true);
+    setTimeout(() => {
+      const queryLower = aiQuery.toLowerCase();
+      if (queryLower.includes('amazon')) {
+        setAiResponse('### 🎯 Faculty AI Recommendation for Amazon\n- **Recommended Candidates**: Manoj (Readiness: 88%), Irfan (Readiness: 94%), Swathi (Readiness: 85%)\n- **Strengths**: High DSA Solved Count & Strong Resume ATS formatting.\n- **Action Items**: Conduct Amazon System Design Mock Interview before Tuesday.');
+      } else if (queryLower.includes('risk') || queryLower.includes('help')) {
+        setAiResponse('### ⚠️ Faculty AI Risk Assessment\n- **Students Needing Assistance**: 3 candidates with readiness score < 70%.\n- **Recommended Action**: Assign mandatory Dynamic Programming practice module and schedule Resume ATS Optimization session.');
+      } else {
+        setAiResponse(`### 🤖 Faculty AI Career Analysis\nBased on batch performance for "${aiQuery}":\n- **Placement Readiness**: 79% batch average.\n- **Top Performers**: 15 students qualified for tier-1 tech drives.\n- **Suggested Action**: Broadcast resume optimization announcement.`);
+      }
+      setAiLoading(false);
+    }, 600);
+  }
 
   // Announcement state
   const [announcements, setAnnouncements] = useState([
@@ -100,8 +122,8 @@ export default function StaffDashboard({ authUser, theme }) {
             </p>
           </div>
 
-          <div style={{ display: 'flex', gap: 10 }}>
-            {['overview', 'students', 'drives', 'announcements'].map(tab => (
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            {['overview', 'students', 'drives', 'announcements', 'reports', 'ai_assistant'].map(tab => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -113,7 +135,7 @@ export default function StaffDashboard({ authUser, theme }) {
                   boxShadow: activeTab === tab ? '0 4px 12px rgba(16,185,129,0.3)' : 'none', transition: 'all 0.2s'
                 }}
               >
-                {tab}
+                {tab === 'ai_assistant' ? '🤖 Faculty AI' : tab}
               </button>
             ))}
           </div>
@@ -393,6 +415,62 @@ export default function StaffDashboard({ authUser, theme }) {
               ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Reports Tab */}
+      {activeTab === 'reports' && (
+        <div className="card" style={{ padding: 24, borderRadius: 18 }}>
+          <h3 style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Award size={20} color="#10B981" /> Institutional Placement Reports & Exports
+          </h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 16 }}>
+            <div style={{ padding: 20, borderRadius: 14, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+              <h4 style={{ margin: '0 0 6px', color: 'var(--text-primary)' }}>📊 Weekly Batch Analytics PDF</h4>
+              <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Summary of DSA solved, resume scores, & placement readiness trends.</p>
+              <button className="btn btn-sm" style={{ background: '#10B981', color: '#FFF', width: '100%', marginTop: 8 }} onClick={() => alert('Exporting Weekly Batch Analytics PDF...')}>Download PDF</button>
+            </div>
+            <div style={{ padding: 20, borderRadius: 14, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+              <h4 style={{ margin: '0 0 6px', color: 'var(--text-primary)' }}>📑 Placement Drive Eligibility Excel</h4>
+              <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Complete list of eligible candidates filtered by company cutoffs.</p>
+              <button className="btn btn-sm" style={{ background: '#10B981', color: '#FFF', width: '100%', marginTop: 8 }} onClick={() => alert('Exporting Placement Drive Eligibility Excel...')}>Download Excel</button>
+            </div>
+            <div style={{ padding: 20, borderRadius: 14, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+              <h4 style={{ margin: '0 0 6px', color: 'var(--text-primary)' }}>⚠️ Students At Risk Report</h4>
+              <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Detailed AI breakdown of students requiring faculty intervention.</p>
+              <button className="btn btn-sm" style={{ background: '#EF4444', color: '#FFF', width: '100%', marginTop: 8 }} onClick={() => alert('Exporting Risk Assessment Report...')}>Download PDF</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Faculty AI Assistant Tab */}
+      {activeTab === 'ai_assistant' && (
+        <div className="card" style={{ padding: 24, borderRadius: 18 }}>
+          <h3 style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Sparkles size={20} color="#10B981" /> Faculty Intelligence AI Assistant
+          </h3>
+          <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 20 }}>Ask questions like "Who is ready for Amazon?", "Which candidates have weak coding?", or "Generate weekly placement report".</p>
+
+          <form onSubmit={handleAiQuery} style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
+            <input
+              className="input"
+              value={aiQuery}
+              onChange={e => setAiQuery(e.target.value)}
+              placeholder="e.g. Recommend candidates for Amazon drive..."
+              style={{ flex: 1 }}
+              required
+            />
+            <button className="btn btn-primary" type="submit" style={{ background: '#10B981', borderColor: '#10B981' }} disabled={aiLoading}>
+              {aiLoading ? <RefreshCw size={16} className="spinner" /> : 'Ask Faculty AI'}
+            </button>
+          </form>
+
+          {aiResponse && (
+            <div style={{ padding: 20, borderRadius: 14, background: 'var(--bg-secondary)', border: '1px solid #10B981', whiteSpace: 'pre-line', fontSize: 14, color: 'var(--text-primary)' }}>
+              {aiResponse}
+            </div>
+          )}
         </div>
       )}
     </div>

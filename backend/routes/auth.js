@@ -47,7 +47,8 @@ router.post('/register', async (req, res) => {
     }
 
     const normalizedEmail = email.trim().toLowerCase();
-    const userRole = (role && (role === 'staff' || role === 'faculty' || role === 'admin')) ? 'staff' : 'student';
+    // Public registration is ALWAYS Student role
+    const userRole = 'student';
 
     // Check if user already exists
     const existing = queryOne('SELECT * FROM users WHERE email = ?', [normalizedEmail]);
@@ -124,8 +125,8 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'Incorrect password.' });
     }
 
-    // Active user role
-    const userRole = user.role || (role === 'staff' ? 'staff' : 'student');
+    // Active user role rule: if email ends with @careerforge.ai or user.role === 'staff' -> staff
+    const userRole = (normalizedEmail.endsWith('@careerforge.ai') || user.role === 'staff') ? 'staff' : 'student';
 
     // Find linked student ID
     let student = queryOne('SELECT * FROM students WHERE email = ?', [normalizedEmail]);

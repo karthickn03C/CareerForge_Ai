@@ -244,6 +244,29 @@ function initializeSchema() {
   `);
 
   console.log('✅ Database schema initialized');
+  seedStaffAccounts();
+}
+
+async function seedStaffAccounts() {
+  const bcrypt = require('bcryptjs');
+  const staffUsers = [
+    { name: 'Admin', email: 'admin@careerforge.ai', pass: 'Admin@123' },
+    { name: 'Placement Officer', email: 'placement@careerforge.ai', pass: 'Placement@123' },
+    { name: 'HOD', email: 'hod@careerforge.ai', pass: 'HOD@123' },
+    { name: 'Faculty Member', email: 'faculty@careerforge.ai', pass: 'Faculty@123' }
+  ];
+
+  for (const s of staffUsers) {
+    const existing = queryOne('SELECT * FROM users WHERE email = ?', [s.email]);
+    if (!existing) {
+      const hashedPassword = bcrypt.hashSync(s.pass, 10);
+      execute(
+        'INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)',
+        [s.name, s.email, hashedPassword, 'staff']
+      );
+      console.log(`👤 Seeded staff account: ${s.email}`);
+    }
+  }
 }
 
 /**
