@@ -106,41 +106,46 @@ router.post('/register', async (req, res) => {
 // ── POST /api/auth/login ──────────────────────────────────────────────────
 router.post('/login', async (req, res) => {
   try {
-    const { email, password, role } = req.body;
+    const { email, password } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required.' });
     }
 
     const normalizedEmail = email.trim().toLowerCase();
-    const user = queryOne('SELECT * FROM users WHERE email = ?', [normalizedEmail]);
+    
+    // 1. Query students table first, fallback to users table
+    let account = queryOne('SELECT * FROM students WHERE email = ?', [normalizedEmail]);
+    if (!account) {
+      account = queryOne('SELECT * FROM users WHERE email = ?', [normalizedEmail]);
+    }
 
-    if (!user) {
+    if (!account || !account.password) {
       return res.status(400).json({ error: 'This account does not exist.' });
     }
 
-    // Verify password with bcrypt
-    const validPassword = await bcrypt.compare(password, user.password);
+    // 2. Verify password using bcrypt
+    const validPassword = await bcrypt.compare(password, account.password);
     if (!validPassword) {
       return res.status(400).json({ error: 'Incorrect password.' });
     }
 
-    // Active user role read strictly from database (seeded/stored user.role)
-    const userRole = (user.role === 'staff' || normalizedEmail.endsWith('@careerforge.ai')) ? 'staff' : 'student';
+    // 3. Read role strictly from database
+    const userRole = account.role || 'student';
 
-    // Find linked student ID
-    let student = queryOne('SELECT * FROM students WHERE email = ?', [normalizedEmail]);
-    if (!student) {
+    // 4. Ensure linked student record exists
+    let studentRecord = queryOne('SELECT * FROM students WHERE email = ?', [normalizedEmail]);
+    if (!studentRecord) {
       const sResult = execute(
-        'INSERT INTO students (name, email) VALUES (?, ?)',
-        [user.name, normalizedEmail]
+        'INSERT INTO students (name, email, password, role) VALUES (?, ?, ?, ?)',
+        [account.name, normalizedEmail, account.password, userRole]
       );
-      student = queryOne('SELECT * FROM students WHERE id = ?', [sResult.lastInsertRowid]);
+      studentRecord = queryOne('SELECT * FROM students WHERE id = ?', [sResult.lastInsertRowid]);
     }
 
-    // Generate JWT token
+    // 5. Generate JWT token with verified role
     const token = jwt.sign(
-      { id: user.id, studentId: student.id, email: user.email, name: user.name, role: userRole },
+      { id: account.id, studentId: studentRecord.id, email: account.email, name: account.name, role: userRole },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -149,10 +154,10 @@ router.post('/login', async (req, res) => {
       success: true,
       token,
       user: {
-        id: user.id,
-        studentId: student.id,
-        name: user.name,
-        email: user.email,
+        id: account.id,
+        studentId: studentRecord.id,
+        name: account.name,
+        email: account.email,
         role: userRole
       }
     });

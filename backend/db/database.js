@@ -61,7 +61,9 @@ function initializeSchema() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       firebase_uid TEXT UNIQUE,
-      email TEXT,
+      email TEXT UNIQUE,
+      password TEXT,
+      role TEXT DEFAULT 'student',
       photo_url TEXT,
       leetcode_username TEXT,
       target_date TEXT,
@@ -69,12 +71,14 @@ function initializeSchema() {
     );
   `);
 
-  // Safe migrations for existing SQLite file
+  // Safe migrations for existing database file
   const safeAddColumn = (columnDef) => {
     try { db.run(`ALTER TABLE students ADD COLUMN ${columnDef}`); } catch (e) {}
   };
   safeAddColumn('firebase_uid TEXT');
   safeAddColumn('email TEXT');
+  safeAddColumn('password TEXT');
+  safeAddColumn('role TEXT DEFAULT \'student\'');
   safeAddColumn('photo_url TEXT');
   safeAddColumn('leetcode_username TEXT');
   safeAddColumn('leetcode_total_solved INTEGER DEFAULT 0');
@@ -257,16 +261,42 @@ async function seedStaffAccounts() {
   ];
 
   for (const s of staffUsers) {
-    const existing = queryOne('SELECT * FROM users WHERE email = ?', [s.email]);
-    if (!existing) {
-      const hashedPassword = bcrypt.hashSync(s.pass, 10);
+    const hashedPassword = bcrypt.hashSync(s.pass, 10);
+
+    // 1. Seed users table
+    const existingUser = queryOne('SELECT * FROM users WHERE email = ?', [s.email]);
+    if (!existingUser) {
       execute(
         'INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)',
         [s.name, s.email, hashedPassword, 'staff']
       );
-      console.log(`👤 Seeded staff account: ${s.email}`);
+      console.log(`👤 Seeded staff user: ${s.email}`);
+    } else {
+      execute(
+        'UPDATE users SET role = ? WHERE email = ?',
+        ['staff', s.email]
+      );
+    }
+
+    // 2. Seed students table
+    const existingStudent = queryOne('SELECT * FROM students WHERE email = ?', [s.email]);
+    if (!existingStudent) {
+      execute(
+        'INSERT INTO students (name, email, password, role) VALUES (?, ?, ?, ?)',
+        [s.name, s.email, hashedPassword, 'staff']
+      );
+      console.log(`🎓 Seeded staff record in students table: ${s.email}`);
+    } else {
+      execute(
+        'UPDATE students SET role = ?, password = COALESCE(password, ?) WHERE email = ?',
+        ['staff', hashedPassword, s.email]
+      );
     }
   }
+
+  // Verification log check
+  const staffList = queryAll("SELECT email, role FROM students WHERE role = 'staff'");
+  console.log('✅ Staff Accounts Verification in students table:', staffList);
 }
 
 /**
