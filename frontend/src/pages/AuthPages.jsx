@@ -5,6 +5,7 @@ import { Zap, Mail, Lock, User, ShieldCheck } from 'lucide-react';
 export function LoginPage({ onLoginSuccess, onNavigateRegister, onBackHome }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [role, setRole] = useState('student'); // 'student' | 'staff'
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -18,7 +19,7 @@ export function LoginPage({ onLoginSuccess, onNavigateRegister, onBackHome }) {
     setError('');
 
     try {
-      const res = await loginUser({ email: email.trim(), password });
+      const res = await loginUser({ email: email.trim(), password, role });
       if (res.success && res.token) {
         localStorage.setItem('careerforge_token', res.token);
         onLoginSuccess(res.user, res.token);
@@ -42,7 +43,33 @@ export function LoginPage({ onLoginSuccess, onNavigateRegister, onBackHome }) {
         </div>
 
         <h2 style={{ fontSize: 24, fontWeight: 900, color: 'var(--text-primary)', textAlign: 'center', marginBottom: 4 }}>Sign In to CareerForge AI</h2>
-        <p style={{ fontSize: 13, color: 'var(--text-secondary)', textAlign: 'center', marginBottom: 28 }}>Enter your email and password to access your dashboard</p>
+        <p style={{ fontSize: 13, color: 'var(--text-secondary)', textAlign: 'center', marginBottom: 20 }}>Select your portal role to continue</p>
+
+        {/* Role Segmented Selector */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, padding: 4, background: 'var(--bg-secondary)', borderRadius: 14, marginBottom: 20, border: '1px solid var(--border-color)' }}>
+          <button
+            type="button"
+            onClick={() => setRole('student')}
+            style={{
+              padding: '8px 12px', borderRadius: 10, border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+              background: role === 'student' ? 'linear-gradient(135deg, var(--primary), var(--accent))' : 'transparent',
+              color: role === 'student' ? '#FFFFFF' : 'var(--text-secondary)', transition: 'all 0.2s'
+            }}
+          >
+            🎓 Student Portal
+          </button>
+          <button
+            type="button"
+            onClick={() => setRole('staff')}
+            style={{
+              padding: '8px 12px', borderRadius: 10, border: 'none', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+              background: role === 'staff' ? 'linear-gradient(135deg, #10B981, #059669)' : 'transparent',
+              color: role === 'staff' ? '#FFFFFF' : 'var(--text-secondary)', transition: 'all 0.2s'
+            }}
+          >
+            🏫 Staff / Admin
+          </button>
+        </div>
 
         {error && <div className="alert alert-error" style={{ marginBottom: 16 }}>{error}</div>}
 
@@ -107,6 +134,7 @@ export function RegisterPage({ onRegisterSuccess, onNavigateLogin, onBackHome })
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [role, setRole] = useState('student');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -138,7 +166,8 @@ export function RegisterPage({ onRegisterSuccess, onNavigateLogin, onBackHome })
         name: name.trim(),
         email: email.trim(),
         password,
-        confirmPassword
+        confirmPassword,
+        role
       });
 
       if (res.success) {

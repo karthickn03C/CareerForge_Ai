@@ -22,11 +22,12 @@ api.interceptors.request.use((config) => {
   return config;
 }, (error) => Promise.reject(error));
 
-// ── Auth API ───────────────────────────────────────────────────────────────
+// ── Auth & Staff API ───────────────────────────────────────────────────────
 export const registerUser = (data) => api.post('/auth/register', data).then(r => r.data);
 export const loginUser = (data) => api.post('/auth/login', data).then(r => r.data);
 export const getMeUser = () => api.get('/auth/me').then(r => r.data);
 export const logoutUser = () => api.post('/auth/logout').then(r => r.data);
+export const getStaffAnalytics = () => api.get('/students/staff/analytics').then(r => r.data);
 
 // ── Students ──────────────────────────────────────────────────────────────
 export const getStudents = () => api.get('/students').then(r => r.data);

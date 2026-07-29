@@ -51,6 +51,7 @@ function initializeSchema() {
       name TEXT NOT NULL,
       email TEXT UNIQUE NOT NULL,
       password TEXT NOT NULL,
+      role TEXT DEFAULT 'student',
       created_at TEXT DEFAULT (datetime('now'))
     );
   `);
@@ -77,6 +78,8 @@ function initializeSchema() {
   safeAddColumn('photo_url TEXT');
   safeAddColumn('leetcode_username TEXT');
   safeAddColumn('leetcode_total_solved INTEGER DEFAULT 0');
+
+  try { db.run(`ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'student';`); } catch (e) {}
 
   try { db.run(`ALTER TABLE plans ADD COLUMN target_company TEXT;`); } catch (e) {}
 

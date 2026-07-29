@@ -27,7 +27,7 @@ function authenticateToken(req, res, next) {
 // ── POST /api/auth/register ───────────────────────────────────────────────
 router.post('/register', async (req, res) => {
   try {
-    const { name, email, password, confirmPassword } = req.body;
+    const { name, email, password, confirmPassword, role } = req.body;
 
     if (!name || !name.trim()) {
       return res.status(400).json({ error: 'Full Name is required.' });
@@ -47,6 +47,7 @@ router.post('/register', async (req, res) => {
     }
 
     const normalizedEmail = email.trim().toLowerCase();
+    const userRole = (role && (role === 'staff' || role === 'faculty' || role === 'admin')) ? 'staff' : 'student';
 
     // Check if user already exists
     const existing = queryOne('SELECT * FROM users WHERE email = ?', [normalizedEmail]);
@@ -60,13 +61,13 @@ router.post('/register', async (req, res) => {
 
     // Insert new user into database
     const result = execute(
-      'INSERT INTO users (name, email, password) VALUES (?, ?, ?)',
-      [name.trim(), normalizedEmail, hashedPassword]
+      'INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)',
+      [name.trim(), normalizedEmail, hashedPassword, userRole]
     );
 
-    const newUser = queryOne('SELECT id, name, email, created_at FROM users WHERE id = ?', [result.lastInsertRowid]);
+    const newUser = queryOne('SELECT id, name, email, role, created_at FROM users WHERE id = ?', [result.lastInsertRowid]);
 
-    // Also sync or ensure corresponding student record
+    // Ensure corresponding student record
     let student = queryOne('SELECT * FROM students WHERE email = ?', [normalizedEmail]);
     if (!student) {
       const sResult = execute(
@@ -76,9 +77,9 @@ router.post('/register', async (req, res) => {
       student = queryOne('SELECT * FROM students WHERE id = ?', [sResult.lastInsertRowid]);
     }
 
-    // Generate JWT token
+    // Generate JWT token with role
     const token = jwt.sign(
-      { id: newUser.id, studentId: student.id, email: newUser.email, name: newUser.name },
+      { id: newUser.id, studentId: student.id, email: newUser.email, name: newUser.name, role: userRole },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -91,7 +92,8 @@ router.post('/register', async (req, res) => {
         id: newUser.id,
         studentId: student.id,
         name: newUser.name,
-        email: newUser.email
+        email: newUser.email,
+        role: userRole
       }
     });
   } catch (err) {
@@ -103,7 +105,7 @@ router.post('/register', async (req, res) => {
 // ── POST /api/auth/login ──────────────────────────────────────────────────
 router.post('/login', async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, role } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required.' });
@@ -122,6 +124,9 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'Incorrect password.' });
     }
 
+    // Active user role
+    const userRole = user.role || (role === 'staff' ? 'staff' : 'student');
+
     // Find linked student ID
     let student = queryOne('SELECT * FROM students WHERE email = ?', [normalizedEmail]);
     if (!student) {
@@ -134,7 +139,7 @@ router.post('/login', async (req, res) => {
 
     // Generate JWT token
     const token = jwt.sign(
-      { id: user.id, studentId: student.id, email: user.email, name: user.name },
+      { id: user.id, studentId: student.id, email: user.email, name: user.name, role: userRole },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -146,7 +151,8 @@ router.post('/login', async (req, res) => {
         id: user.id,
         studentId: student.id,
         name: user.name,
-        email: user.email
+        email: user.email,
+        role: userRole
       }
     });
   } catch (err) {
@@ -158,7 +164,7 @@ router.post('/login', async (req, res) => {
 // ── GET /api/auth/me ──────────────────────────────────────────────────────
 router.get('/me', authenticateToken, (req, res) => {
   try {
-    const user = queryOne('SELECT id, name, email, created_at FROM users WHERE id = ?', [req.user.id]);
+    const user = queryOne('SELECT id, name, email, role, created_at FROM users WHERE id = ?', [req.user.id]);
     if (!user) {
       return res.status(404).json({ error: 'User not found.' });
     }
@@ -170,7 +176,8 @@ router.get('/me', authenticateToken, (req, res) => {
         id: user.id,
         studentId: student ? student.id : null,
         name: user.name,
-        email: user.email
+        email: user.email,
+        role: user.role || req.user.role || 'student'
       }
     });
   } catch (err) {

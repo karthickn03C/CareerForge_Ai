@@ -8,14 +8,15 @@ import Interview from './pages/Interview';
 import MyPlan from './pages/MyPlan';
 import ResumeAnalyzer from './pages/ResumeAnalyzer';
 import Opportunities from './pages/Opportunities';
+import StaffDashboard from './pages/StaffDashboard';
 
 import { getMeUser, getStudent, refreshLeetCodeStats } from './api/client';
 import {
   Brain, BarChart2, BookOpen, MessageSquare, Calendar, FileText, Compass,
-  Sun, Moon, LogOut, Zap
+  Sun, Moon, LogOut, Zap, ShieldCheck
 } from 'lucide-react';
 
-const TABS = [
+const STUDENT_TABS = [
   { id: 'forgemind', label: 'ForgeMind AI', icon: Brain },
   { id: 'progress', label: 'My Progress', icon: BarChart2 },
   { id: 'practice', label: 'Practice', icon: BookOpen },
@@ -46,7 +47,7 @@ export default function App() {
         .then(res => {
           if (res.success && res.user) {
             setAuthUser(res.user);
-            loadStudentData(res.user.studentId);
+            if (res.user.studentId) loadStudentData(res.user.studentId);
             setViewState('dashboard');
           } else {
             localStorage.removeItem('careerforge_token');
@@ -149,6 +150,8 @@ export default function App() {
     return null;
   }
 
+  const isStaff = authUser?.role === 'staff' || authUser?.role === 'faculty' || authUser?.role === 'admin';
+
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)' }}>
       {/* Top Navbar */}
@@ -164,18 +167,18 @@ export default function App() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }} onClick={() => setActiveTab('forgemind')}>
           <div style={{
             width: 38, height: 38, borderRadius: 12,
-            background: 'linear-gradient(135deg, var(--primary), var(--accent))',
+            background: isStaff ? 'linear-gradient(135deg, #10B981, #059669)' : 'linear-gradient(135deg, var(--primary), var(--accent))',
             display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff',
             boxShadow: '0 4px 12px rgba(79, 70, 229, 0.25)',
           }}>
-            <Zap size={22} />
+            {isStaff ? <ShieldCheck size={22} /> : <Zap size={22} />}
           </div>
           <div>
             <span style={{ fontSize: 18, fontWeight: 900, color: 'var(--text-primary)', letterSpacing: '-0.4px' }}>
-              CareerForge <span style={{ color: 'var(--primary)' }}>AI</span>
+              CareerForge <span style={{ color: isStaff ? '#10B981' : 'var(--primary)' }}>AI</span>
             </span>
             <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.6px', marginTop: -2 }}>
-              AI Placement Preparation Platform
+              {isStaff ? 'Faculty & Staff Placement Portal' : 'AI Placement Preparation Platform'}
             </span>
           </div>
         </div>
@@ -192,11 +195,16 @@ export default function App() {
             <span style={{ fontSize: 12, fontWeight: 700 }}>{theme === 'dark' ? 'Light' : 'Dark'}</span>
           </button>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 10px', borderRadius: 20, background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
-            <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--primary)', color: '#fff', fontSize: 13, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '4px 12px', borderRadius: 20, background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+            <div style={{ width: 28, height: 28, borderRadius: '50%', background: isStaff ? '#10B981' : 'var(--primary)', color: '#fff', fontSize: 13, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               {authUser?.name ? authUser.name[0] : 'U'}
             </div>
-            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{authUser?.name || 'Candidate'}</span>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.1 }}>{authUser?.name || 'Candidate'}</span>
+              <span style={{ fontSize: 10, fontWeight: 800, color: isStaff ? '#10B981' : 'var(--primary)', textTransform: 'uppercase' }}>
+                {isStaff ? 'Faculty / Staff' : 'Student'}
+              </span>
+            </div>
           </div>
 
           <button
@@ -211,57 +219,63 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Body Grid Layout */}
-      <div style={{ flex: 1, display: 'flex' }}>
-        {/* Sidebar */}
-        <aside style={{
-          width: 260, flexShrink: 0,
-          background: 'var(--sidebar-bg)',
-          borderRight: '1px solid var(--border-color)',
-          padding: '20px 14px',
-          display: 'flex', flexDirection: 'column', gap: 6,
-        }}>
-          <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.8px', padding: '4px 14px 10px' }}>
-            Navigation
-          </p>
-
-          {TABS.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 12,
-                  padding: '10px 14px', borderRadius: 12,
-                  fontSize: 13, fontWeight: isActive ? 700 : 600,
-                  border: 'none', cursor: 'pointer', textAlign: 'left',
-                  background: isActive ? 'linear-gradient(135deg, var(--primary), var(--accent))' : 'transparent',
-                  color: isActive ? '#FFFFFF' : 'var(--text-secondary)',
-                  boxShadow: isActive ? '0 4px 14px rgba(79, 70, 229, 0.25)' : 'none',
-                  transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
-                  height: 44
-                }}
-              >
-                <Icon size={18} color={isActive ? '#FFFFFF' : 'var(--text-secondary)'} style={{ flexShrink: 0 }} />
-                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tab.label}</span>
-              </button>
-            );
-          })}
-        </aside>
-
-        {/* Main Protected Content View */}
+      {/* Main Content Layout */}
+      {isStaff ? (
         <main style={{ flex: 1, padding: '28px 36px', overflowY: 'auto' }}>
-          {activeTab === 'forgemind' && <ForgeMind student={student || { id: authUser.studentId, name: authUser.name }} theme={theme} onNavigate={(tab) => setActiveTab(tab)} />}
-          {activeTab === 'progress' && <MyProgress student={student || { id: authUser.studentId, name: authUser.name }} theme={theme} onStudentUpdate={setStudent} />}
-          {activeTab === 'practice' && <Practice student={student || { id: authUser.studentId, name: authUser.name }} theme={theme} />}
-          {activeTab === 'interview' && <Interview student={student || { id: authUser.studentId, name: authUser.name }} theme={theme} />}
-          {activeTab === 'plan' && <MyPlan student={student || { id: authUser.studentId, name: authUser.name }} theme={theme} />}
-          {activeTab === 'resume' && <ResumeAnalyzer student={student || { id: authUser.studentId, name: authUser.name }} theme={theme} />}
-          {activeTab === 'opportunities' && <Opportunities student={student || { id: authUser.studentId, name: authUser.name }} theme={theme} />}
+          <StaffDashboard authUser={authUser} theme={theme} />
         </main>
-      </div>
+      ) : (
+        <div style={{ flex: 1, display: 'flex' }}>
+          {/* Sidebar */}
+          <aside style={{
+            width: 260, flexShrink: 0,
+            background: 'var(--sidebar-bg)',
+            borderRight: '1px solid var(--border-color)',
+            padding: '20px 14px',
+            display: 'flex', flexDirection: 'column', gap: 6,
+          }}>
+            <p style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.8px', padding: '4px 14px 10px' }}>
+              Navigation
+            </p>
+
+            {STUDENT_TABS.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    padding: '10px 14px', borderRadius: 12,
+                    fontSize: 13, fontWeight: isActive ? 700 : 600,
+                    border: 'none', cursor: 'pointer', textAlign: 'left',
+                    background: isActive ? 'linear-gradient(135deg, var(--primary), var(--accent))' : 'transparent',
+                    color: isActive ? '#FFFFFF' : 'var(--text-secondary)',
+                    boxShadow: isActive ? '0 4px 14px rgba(79, 70, 229, 0.25)' : 'none',
+                    transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+                    height: 44
+                  }}
+                >
+                  <Icon size={18} color={isActive ? '#FFFFFF' : 'var(--text-secondary)'} style={{ flexShrink: 0 }} />
+                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{tab.label}</span>
+                </button>
+              );
+            })}
+          </aside>
+
+          {/* Main Protected Student Content View */}
+          <main style={{ flex: 1, padding: '28px 36px', overflowY: 'auto' }}>
+            {activeTab === 'forgemind' && <ForgeMind student={student || { id: authUser.studentId, name: authUser.name }} theme={theme} onNavigate={(tab) => setActiveTab(tab)} />}
+            {activeTab === 'progress' && <MyProgress student={student || { id: authUser.studentId, name: authUser.name }} theme={theme} onStudentUpdate={setStudent} />}
+            {activeTab === 'practice' && <Practice student={student || { id: authUser.studentId, name: authUser.name }} theme={theme} />}
+            {activeTab === 'interview' && <Interview student={student || { id: authUser.studentId, name: authUser.name }} theme={theme} />}
+            {activeTab === 'plan' && <MyPlan student={student || { id: authUser.studentId, name: authUser.name }} theme={theme} />}
+            {activeTab === 'resume' && <ResumeAnalyzer student={student || { id: authUser.studentId, name: authUser.name }} theme={theme} />}
+            {activeTab === 'opportunities' && <Opportunities student={student || { id: authUser.studentId, name: authUser.name }} theme={theme} />}
+          </main>
+        </div>
+      )}
     </div>
   );
 }
