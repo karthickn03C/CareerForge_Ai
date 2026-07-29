@@ -5,6 +5,21 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
+// Attach Authorization Bearer Token if available
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('careerforge_token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+}, (error) => Promise.reject(error));
+
+// ── Auth API ───────────────────────────────────────────────────────────────
+export const registerUser = (data) => api.post('/auth/register', data).then(r => r.data);
+export const loginUser = (data) => api.post('/auth/login', data).then(r => r.data);
+export const getMeUser = () => api.get('/auth/me').then(r => r.data);
+export const logoutUser = () => api.post('/auth/logout').then(r => r.data);
+
 // ── Students ──────────────────────────────────────────────────────────────
 export const getStudents = () => api.get('/students').then(r => r.data);
 export const getStudent = (id) => api.get(`/students/${id}`).then(r => r.data);

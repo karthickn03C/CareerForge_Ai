@@ -12,6 +12,7 @@ const plannerRouter = require('./routes/planner');
 const resumeRouter = require('./routes/resume');
 const opportunitiesRouter = require('./routes/opportunities');
 const forgemindRouter = require('./routes/forgemind');
+const { router: authRouter } = require('./routes/auth');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -28,6 +29,7 @@ app.use((req, _res, next) => {
 });
 
 // ── Routes ─────────────────────────────────────────────────────────────────
+app.use('/api/auth', authRouter);
 app.use('/api/students', studentsRouter);
 app.use('/api/progress', progressRouter);
 app.use('/api/questions', questionsRouter);
