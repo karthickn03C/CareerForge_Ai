@@ -1,4 +1,4 @@
-# PrepPilot 🚀
+# CareerForge Ai 🚀
 ### AI-Powered Placement Preparation Platform
 
 A multi-agent web app that helps students track placement preparation, identify weak areas, generate targeted practice questions, run mock interviews, and get a personalized day-by-day prep plan.
