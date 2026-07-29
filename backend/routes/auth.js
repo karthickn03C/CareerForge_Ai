@@ -113,20 +113,29 @@ router.post('/login', async (req, res) => {
     }
 
     const normalizedEmail = email.trim().toLowerCase();
+    console.log(`[LOGIN ATTEMPT] Received Email: "${normalizedEmail}"`);
     
     // 1. Query students table first, fallback to users table
     let account = queryOne('SELECT * FROM students WHERE email = ?', [normalizedEmail]);
+    let sourceTable = 'students';
     if (!account) {
       account = queryOne('SELECT * FROM users WHERE email = ?', [normalizedEmail]);
+      sourceTable = 'users';
     }
 
+    console.log(`[LOGIN ATTEMPT] User Found: ${Boolean(account)} (Source Table: ${sourceTable})`);
+
     if (!account || !account.password) {
+      console.log(`[LOGIN ATTEMPT] FAILED - Account not found for email: "${normalizedEmail}"`);
       return res.status(400).json({ error: 'This account does not exist.' });
     }
+
+    console.log(`[LOGIN ATTEMPT] Stored User Role: "${account.role}"`);
 
     // 2. Verify password using bcrypt
     const validPassword = await bcrypt.compare(password, account.password);
     if (!validPassword) {
+      console.log(`[LOGIN ATTEMPT] FAILED - Invalid password for email: "${normalizedEmail}"`);
       return res.status(400).json({ error: 'Incorrect password.' });
     }
 
@@ -150,6 +159,8 @@ router.post('/login', async (req, res) => {
       { expiresIn: '7d' }
     );
 
+    console.log(`[LOGIN ATTEMPT] SUCCESS - User: "${account.email}", Role: "${userRole}"`);
+
     res.json({
       success: true,
       token,
@@ -164,6 +175,27 @@ router.post('/login', async (req, res) => {
   } catch (err) {
     console.error('[Login Error]', err);
     res.status(500).json({ error: 'Login failed due to a server error.' });
+  }
+});
+
+// ── GET /api/auth/debug-staff ──────────────────────────────────────────────
+router.get('/debug-staff', (req, res) => {
+  try {
+    const studentsStaff = queryAll("SELECT id, name, email, role FROM students WHERE role = 'staff'");
+    const usersStaff = queryAll("SELECT id, name, email, role FROM users WHERE role = 'staff'");
+    const allStudents = queryAll("SELECT id, name, email, role FROM students");
+    
+    res.json({
+      success: true,
+      timestamp: new Date().toISOString(),
+      studentsStaffCount: studentsStaff.length,
+      studentsStaff,
+      usersStaff,
+      totalStudentsCount: allStudents.length,
+      allStudentEmails: allStudents.map(s => s.email)
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
