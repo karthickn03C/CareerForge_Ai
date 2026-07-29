@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { queryOne, execute } = require('../db/database');
+const { queryOne, queryAll, execute } = require('../db/database');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'careerforge_super_secret_jwt_key_2026';
 
