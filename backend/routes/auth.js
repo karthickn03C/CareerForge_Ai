@@ -202,20 +202,22 @@ router.get('/debug-staff', (req, res) => {
 // ── GET /api/auth/me ──────────────────────────────────────────────────────
 router.get('/me', authenticateToken, (req, res) => {
   try {
-    const user = queryOne('SELECT id, name, email, role, created_at FROM users WHERE id = ?', [req.user.id]);
-    if (!user) {
+    let account = queryOne('SELECT id, name, email, role, created_at FROM students WHERE id = ? OR email = ?', [req.user.id, req.user.email]);
+    if (!account) {
+      account = queryOne('SELECT id, name, email, role, created_at FROM users WHERE id = ? OR email = ?', [req.user.id, req.user.email]);
+    }
+    if (!account) {
       return res.status(404).json({ error: 'User not found.' });
     }
-    let student = queryOne('SELECT * FROM students WHERE email = ?', [user.email]);
 
     res.json({
       success: true,
       user: {
-        id: user.id,
-        studentId: student ? student.id : null,
-        name: user.name,
-        email: user.email,
-        role: user.role || req.user.role || 'student'
+        id: account.id,
+        studentId: account.id,
+        name: account.name,
+        email: account.email,
+        role: account.role || req.user.role || 'student'
       }
     });
   } catch (err) {
