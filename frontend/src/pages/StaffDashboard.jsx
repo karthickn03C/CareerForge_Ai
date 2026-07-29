@@ -78,29 +78,32 @@ export default function StaffDashboard({ authUser }) {
       const lower = q.toLowerCase();
       const studentsList = data?.students || [];
 
-      if (lower.includes('manoj')) {
-        const manoj = studentsList.find(s => s.name.toLowerCase().includes('manoj')) || {
-          name: 'Manoj Kumar',
-          readinessScore: 84,
-          resumeScore: 91,
-          codingScore: 76,
-          interviewScore: 82,
-          hoursPracticed: 42,
-          leetcode_total_solved: 118
-        };
-        aiText = `### 📊 Student Profile Summary: **${manoj.name}**\n\n| Metric | Score / Progress |\n| :--- | :--- |\n| **Placement Readiness Index** | **${manoj.readinessScore}%** |\n| **Resume ATS Score** | **${manoj.resumeScore}%** |\n| **Coding Score** | **${manoj.codingScore}%** |\n| **Interview Score** | **${manoj.interviewScore}%** |\n| **Hours Practiced** | **${manoj.hoursPracticed} Hours** |\n| **LeetCode Solved** | **${manoj.leetcode_total_solved} Problems** |\n| **Current Streak** | **13 Days** |\n\n#### 🌟 Strong Skills\n- **Frontend Development**: React, Next.js, Tailwind CSS\n- **Backend Engineering**: Node.js, Express, PostgreSQL\n\n#### ⚠️ Weak Areas & Skill Gaps\n- **Algorithms**: Dynamic Programming (DP) & Graph Traversal\n- **Mock Interview**: Needs practice in System Design scalability explanations\n\n#### 🎯 Faculty Recommendations\n- [ ] Complete 10 Graph & DP Medium Level Problems in Coding Portal\n- [ ] Schedule 1-on-1 Mock Interview session with Faculty\n- [ ] Update Resume project section with deployed backend URL`;
+      // Try to match any real student by name from the query
+      const matchedStudent = studentsList.find(s =>
+        lower.includes(s.name.toLowerCase().split(' ')[0].toLowerCase()) ||
+        lower.includes(s.name.toLowerCase())
+      );
+
+      if (matchedStudent) {
+        const s = matchedStudent;
+        aiText = `### 📊 Student Profile Summary: **${s.name}**\n\n| Metric | Score / Progress |\n| :--- | :--- |\n| **Placement Readiness Index** | **${s.readinessScore}%** |\n| **Resume ATS Score** | **${s.resumeScore}%** |\n| **Coding Score** | **${s.codingScore}%** |\n| **Interview Score** | **${s.interviewScore}%** |\n| **Hours Practiced** | **${s.hoursPracticed} Hours** |\n| **Problems Solved** | **${s.problems_solved || s.leetcode_total_solved || 0} Problems** |\n| **Current Streak** | **${s.current_streak || 0} Days** |\n| **Department** | **${s.department}** |\n| **Status** | **${s.status}** |\n\n#### 🎯 AI Recommendation\n${s.aiRecommendation}\n\n#### 📌 Faculty Action\n- [ ] ${s.isAtRisk ? 'Schedule urgent 1-on-1 remedial session' : 'Nominate for upcoming Tier-1 Placement Drives'}\n- [ ] ${s.resumeScore < 60 ? 'Assign Resume ATS Optimization workshop' : 'Resume is placement-ready'}\n- [ ] ${s.codingScore < 60 ? 'Assign 10 DSA Medium problems this week' : 'Coding performance is strong'}`;
       } else if (lower.includes('compare')) {
-        aiText = `### ⚔️ Candidate Performance Comparison\n\n| Candidate Name | Readiness Index | Resume ATS | Coding Score | Interview Score | LeetCode Solved |\n| :--- | :---: | :---: | :---: | :---: | :---: |\n| **Manoj Kumar** | **84%** | 91% | 76% | 82% | 118 |\n| **Arun Prakash** | **78%** | 80% | 85% | 72% | 142 |\n\n**Key Takeaway**: Manoj excels in Resume ATS & Interviews, whereas Arun leads in pure Coding/DSA solved count. Both candidates are qualified for Tier-1 Placement Drives.`;
+        const top2 = studentsList.slice(0, 2);
+        if (top2.length >= 2) {
+          aiText = `### ⚔️ Candidate Performance Comparison\n\n| Candidate Name | Readiness Index | Resume ATS | Coding Score | Interview Score | Problems Solved |\n| :--- | :---: | :---: | :---: | :---: | :---: |\n${top2.map(s => `| **${s.name}** | **${s.readinessScore}%** | ${s.resumeScore}% | ${s.codingScore}% | ${s.interviewScore}% | ${s.problems_solved || 0} |`).join('\n')}\n\n**Key Takeaway**: ${top2[0]?.readinessScore >= top2[1]?.readinessScore ? top2[0]?.name : top2[1]?.name} leads in overall Placement Readiness Index.`;
+        } else {
+          aiText = `### ⚔️ Candidate Comparison\n\nNot enough students registered yet to compare. Please register more students first.`;
+        }
       } else if (lower.includes('intervention') || lower.includes('risk') || lower.includes('attention')) {
         const atRisk = studentsList.filter(s => s.isAtRisk);
-        aiText = `### ⚠️ Candidates Requiring Immediate Faculty Intervention (${atRisk.length} Students)\n\nThese candidates have a Placement Readiness Index below 70%:\n\n${(atRisk.length > 0 ? atRisk : studentsList.slice(0, 3)).map(s => `- **${s.name}** (${s.email}) — Readiness: **${s.readinessScore}%** (Weak Area: Dynamic Programming & ATS Formatting)`).join('\n')}\n\n**Action Recommended**: Assign targeted remedial practice modules & schedule resume feedback session.`;
-      } else if (lower.includes('amazon') || lower.includes('google') || lower.includes('ready')) {
+        aiText = `### ⚠️ Candidates Requiring Immediate Faculty Intervention (${atRisk.length} Students)\n\nThese candidates have a Placement Readiness Index below 70%:\n\n${(atRisk.length > 0 ? atRisk : studentsList.slice(0, 3)).map(s => `- **${s.name}** (${s.email}) — Readiness: **${s.readinessScore}%** — Dept: ${s.department}`).join('\n')}\n\n**Action Recommended**: Assign targeted remedial practice modules & schedule resume feedback session.`;
+      } else if (lower.includes('amazon') || lower.includes('google') || lower.includes('ready') || lower.includes('eligible') || lower.includes('tier')) {
         const ready = studentsList.filter(s => s.readinessScore >= 80);
-        aiText = `### 🎯 Tier-1 Tech Placement Drive Eligible Candidates (${ready.length} Students)\n\nCandidates with Placement Readiness Score ≥ 80%:\n\n| Candidate Name | Department | Readiness Score | ATS Resume | Status |\n| :--- | :---: | :---:: | :---: | :---: |\n${ready.slice(0, 5).map(s => `| **${s.name}** | ${s.department} | **${s.readinessScore}%** | ${s.resumeScore}% | Qualified |`).join('\n')}\n\n**AI Recommendation**: Broadcast Amazon/Google Drive invitation to these ${ready.length} candidates.`;
-      } else if (lower.includes('report') || lower.includes('weekly')) {
-        aiText = `### 📑 Executive Weekly Placement Performance Report\n\n- **Total Batch Candidates**: ${data?.stats?.totalStudents || 24} Candidates\n- **Batch Avg Readiness Index**: **${data?.stats?.avgReadinessScore || 78}%**\n- **Tier-1 Eligible Candidates**: **${data?.stats?.eligibleForDrives || 15} Students**\n- **Candidates At Risk**: **${data?.stats?.studentsAtRisk || 1} Students**\n\n*Report automatically generated from live PostgreSQL analytics.*`;
+        aiText = `### 🎯 Tier-1 Tech Placement Drive Eligible Candidates (${ready.length} Students)\n\nCandidates with Placement Readiness Score ≥ 80%:\n\n| Candidate Name | Department | Readiness Score | Resume ATS | Status |\n| :--- | :---: | :---: | :---: | :---: |\n${(ready.length > 0 ? ready : studentsList).slice(0, 5).map(s => `| **${s.name}** | ${s.department} | **${s.readinessScore}%** | ${s.resumeScore}% | ${s.isAtRisk ? '⚠️ At Risk' : '✅ Qualified'} |`).join('\n')}\n\n**AI Recommendation**: ${ready.length > 0 ? `Broadcast Tier-1 Drive invitations to these ${ready.length} candidates.` : 'No candidates meet the 80% threshold yet. Continue monitoring.'}`;
+      } else if (lower.includes('report') || lower.includes('weekly') || lower.includes('summary')) {
+        aiText = `### 📑 Executive Weekly Placement Performance Report\n\n- **Total Batch Candidates**: ${data?.stats?.totalStudents || 0} Candidates\n- **Batch Avg Readiness Index**: **${data?.stats?.avgReadinessScore || 0}%**\n- **Tier-1 Eligible Candidates**: **${data?.stats?.eligibleForDrives || 0} Students**\n- **Candidates At Risk**: **${data?.stats?.studentsAtRisk || 0} Students**\n- **Active Today**: **${data?.stats?.activeToday || 0} Students**\n\n*Report automatically generated from live PostgreSQL analytics.*`;
       } else {
-        aiText = `### 🤖 ForgeMind Intelligence Insights\n\nBased on real-time database tracking for: **"${q}"**\n\n- **Total Candidates Monitored**: ${data?.stats?.totalStudents || 24} Students\n- **Active Today**: ${data?.stats?.activeToday || 17} Candidates online\n- **Avg Readiness Index**: ${data?.stats?.avgReadinessScore || 78}%\n\nFaculty action recommended: Review **At Risk** candidates in the Roster below.`;
+        aiText = `### 🤖 ForgeMind Intelligence Insights\n\nBased on real-time database tracking for: **"${q}"**\n\n- **Total Candidates Monitored**: ${data?.stats?.totalStudents || 0} Students\n- **Active Today**: ${data?.stats?.activeToday || 0} Candidates online\n- **Avg Readiness Index**: ${data?.stats?.avgReadinessScore || 0}%\n- **Eligible for Drives**: ${data?.stats?.eligibleForDrives || 0} Students\n\n${studentsList.length > 0 ? `You can ask me about any student by name — e.g. "How is ${studentsList[0]?.name} progressing?"` : 'No students registered yet. Students will appear here once they create accounts.'}\n\nFaculty action recommended: Review **At Risk** candidates in the Roster below.`;
       }
 
       setMessages(prev => [...prev, { id: Date.now() + 1, sender: 'ai', text: aiText }]);
@@ -137,12 +140,13 @@ export default function StaffDashboard({ authUser }) {
     return matchesSearch;
   });
 
+  const firstStudentName = data?.students?.[0]?.name?.split(' ')[0] || 'a student';
   const SUGGESTED_PROMPTS = [
-    'How is Manoj progressing?',
-    'Compare Manoj and Arun.',
+    `How is ${firstStudentName} progressing?`,
+    'Compare top 2 candidates.',
     'Who needs intervention?',
     'Who is placement ready?',
-    'Who is eligible for Amazon?',
+    'Who is eligible for Tier-1 drives?',
     'Generate weekly placement report.'
   ];
 
@@ -157,7 +161,7 @@ export default function StaffDashboard({ authUser }) {
     );
   }
 
-  const stats = data?.stats || { totalStudents: 24, activeToday: 17, avgReadinessScore: 78, studentsAtRisk: 1, eligibleForDrives: 15 };
+  const stats = data?.stats || { totalStudents: 0, activeToday: 0, avgReadinessScore: 0, studentsAtRisk: 0, eligibleForDrives: 0 };
 
   return (
     <div style={{ background: '#0B1020', color: '#F8FAFC', minHeight: '100vh', padding: '24px 36px', fontFamily: 'Inter, system-ui, sans-serif' }} className="animate-fade-in">

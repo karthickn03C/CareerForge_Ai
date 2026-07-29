@@ -147,6 +147,21 @@ router.post('/:studentId/chat', upload.single('file'), async (req, res) => {
       [agentMsgId, conversationId, 'agent', result.markdownResponse, JSON.stringify(result.agentOutputs)]
     );
 
+    // Update real-time student activity in PostgreSQL
+    try {
+      execute(
+        `UPDATE students SET 
+          last_login = datetime('now'),
+          status = 'Active Now',
+          study_hours = study_hours + 1,
+          profile_completion = MIN(100, profile_completion + 5)
+         WHERE id = ?`,
+        [studentId]
+      );
+    } catch (activityErr) {
+      console.warn('[ForgeMind Activity Update]', activityErr.message);
+    }
+
     res.json({
       conversationId,
       userMessageId: userMsgId,
