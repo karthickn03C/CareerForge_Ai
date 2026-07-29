@@ -59,15 +59,32 @@ async function start() {
   try {
     await initDb();
 
-    app.listen(PORT, () => {
-      console.log(`
+    let currentPort = parseInt(process.env.PORT || 5000, 10);
+    const maxAttempts = 10;
+
+    function listenOnPort(port, attemptsLeft) {
+      const server = app.listen(port, () => {
+        console.log(`
 ╔═══════════════════════════════════════════════════╗
-║      CareerForge AI Backend — Port ${PORT}        ║
+║      CareerForge AI Backend — Port ${port}        ║
 ╚═══════════════════════════════════════════════════╝
-  🚀 Server:  http://localhost:${PORT}
+  🚀 Server:  http://localhost:${port}
   🤖 Groq:    ${process.env.GROQ_API_KEY ? '✅ Configured' : '❌ NOT SET — add GROQ_API_KEY to .env'}
-      `);
-    });
+        `);
+      });
+
+      server.on('error', (err) => {
+        if (err.code === 'EADDRINUSE' && attemptsLeft > 0) {
+          console.warn(`[Port ${port} in use] Automatically trying next port ${port + 1}...`);
+          listenOnPort(port + 1, attemptsLeft - 1);
+        } else {
+          console.error('Fatal server error:', err);
+          process.exit(1);
+        }
+      });
+    }
+
+    listenOnPort(currentPort, maxAttempts);
   } catch (err) {
     console.error('Fatal startup error:', err);
     process.exit(1);
