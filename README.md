@@ -1,97 +1,133 @@
-# CareerForge Ai 🚀
-### AI-Powered Placement Preparation Platform
+# CareerForge AI 🚀
+### AI-Powered Placement Command Center
 
-A multi-agent web app that helps students track placement preparation, identify weak areas, generate targeted practice questions, run mock interviews, and get a personalized day-by-day prep plan.
+> **Transform placement preparation from panic into precision — with real AI, real data, and real-time tracking.**
+
+[![Vercel](https://img.shields.io/badge/Frontend-Vercel-black?logo=vercel)](https://career-forge-ai-git-main-karthickn03cs-projects.vercel.app)
+[![Render](https://img.shields.io/badge/Backend-Render-46E3B7?logo=render)](https://careerforge-ai-2bbv.onrender.com/api/health)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
 
-## 🤖 The 4 AI Agents
+## 🌐 Live Demo
 
-| Agent | Type | Purpose |
-|-------|------|---------|
-| **Progress Agent** | Pure Logic | Analyzes problem counts per topic, classifies as weak/moderate/strong |
-| **Question Agent** | Gemini LLM | Generates a topic-specific MCQ with explanation |
-| **Interview Agent** | Gemini LLM | Conducts a 2-phase mock interview: question → evaluate answer |
-| **Planner Agent** | Gemini LLM | Creates a day-by-day or week-by-week prep plan based on weak topics |
+| Service | URL |
+|---------|-----|
+| **Frontend (Vercel)** | https://career-forge-ai-git-main-karthickn03cs-projects.vercel.app |
+| **Backend API (Render)** | https://careerforge-ai-2bbv.onrender.com/api |
+| **Health Check** | https://careerforge-ai-2bbv.onrender.com/api/health |
+
+---
+
+## 🎯 What is CareerForge AI?
+
+CareerForge AI is a full-stack, AI-powered placement preparation platform built for final-year engineering students. It combines a **Student Portal** for personalized AI coaching with a **Staff Portal** that gives placement officers real-time visibility into every student's readiness.
+
+---
+
+## ✨ Features
+
+### 🎓 Student Portal
+| Feature | Description |
+|---------|-------------|
+| **Dashboard** | Live placement readiness score — Resume, Coding, Interview, and Overall |
+| **ForgeMind AI** | Personal AI mentor with persistent conversation memory |
+| **Resume Analyzer** | ATS scoring, keyword gap analysis, and actionable feedback |
+| **AI Coding Practice** | AI-generated problems by topic, difficulty, and language with auto-evaluation |
+| **Mock Interview** | Technical & HR interview simulation with AI scoring and feedback |
+| **Study Planner** | Company-weighted day-by-day or week-by-week AI roadmap |
+| **Opportunities** | Curated placement drives filtered by readiness score |
+
+### 👨‍💼 Staff Portal
+| Feature | Description |
+|---------|-------------|
+| **Live Dashboard** | Real-time student roster with readiness scores and risk flags |
+| **Activity Feed** | Live feed of all student activities via Server-Sent Events (SSE) |
+| **ForgeMind Staff AI** | Query any student's full profile with AI-powered analysis |
+| **Reports** | One-click CSV export of all student placement data |
+| **Placement Drives** | Manage drives and see eligible student count per drive |
+
+---
+
+## 🤖 AI Agents
+
+| Agent | Model | Purpose |
+|-------|-------|---------|
+| **ForgeMind Agent** | Groq LLaMA 3.3 70B | Personal AI mentor with context memory |
+| **Resume Agent** | Groq LLaMA 3.1 8B | ATS scoring and resume feedback |
+| **Interview Agent** | Groq LLaMA 3.3 70B | Mock interview Q&A and evaluation |
+| **Coding Agent** | Groq LLaMA 3.3 70B | Code problem generation and evaluation |
+| **Planner Agent** | Groq LLaMA 3.3 70B | Company-specific study plan generation |
+| **Opportunity Agent** | Groq LLaMA 3.1 8B | Placement opportunity discovery |
+| **Progress Agent** | Pure Logic | Topic weakness classification |
+
+> All agents use multi-model fallback chains (llama-3.3-70b → llama-3.1-8b → gemma2-9b) for maximum reliability.
 
 ---
 
 ## 🛠️ Tech Stack
 
-- **Frontend**: React + Vite, Tailwind CSS, Recharts
-- **Backend**: Node.js + Express
-- **Database**: sql.js (pure-JS SQLite, file-backed)
-- **AI**: Google Gemini API (`gemini-2.0-flash`)
+| Layer | Technology |
+|-------|-----------|
+| **Frontend** | React 18, Vite, Tailwind CSS, Framer Motion, Recharts |
+| **Backend** | Node.js, Express.js |
+| **Database** | sql.js (SQLite in WebAssembly, file-backed) |
+| **Authentication** | JWT + bcryptjs |
+| **AI** | Groq SDK (LLaMA 3.3 70B, LLaMA 3.1 8B, Gemma2 9B) |
+| **Real-Time** | Server-Sent Events (SSE) |
+| **Deployment** | Vercel (Frontend) + Render (Backend) |
 
 ---
 
 ## ⚡ Quick Start
 
-### 1. Prerequisites
-- Node.js v18+ 
-- A [Google Gemini API key](https://aistudio.google.com/apikey) (free tier works)
+### Prerequisites
+- Node.js v18+
+- A [Groq API key](https://console.groq.com) (free tier available)
 
-### 2. Clone & install
+### 1. Clone & Install
 ```bash
-git clone <repo>
-cd PerpPilot
+git clone https://github.com/karthickn03C/CareerForge_Ai.git
+cd CareerForge_Ai
 npm run install:all
 ```
 
-### 3. Configure API key
-Edit `backend/.env`:
-```
-GEMINI_API_KEY=your_actual_key_here
+### 2. Configure Environment
+
+Create `backend/.env`:
+```env
 PORT=5000
+GROQ_API_KEY=your_groq_api_key_here
+JWT_SECRET=your_jwt_secret_here
 ```
 
-### 4. Run
+Create `frontend/.env`:
+```env
+VITE_API_URL=http://localhost:5000
+```
+
+### 3. Run Locally
 ```bash
-npm run dev
+# Terminal 1 — Backend
+cd backend && node server.js
+
+# Terminal 2 — Frontend
+cd frontend && npm run dev
 ```
-This starts:
-- Backend at `http://localhost:5000`
-- Frontend at `http://localhost:5173`
+
+- **Frontend**: http://localhost:5173
+- **Backend**: http://localhost:5000/api
 
 ---
 
-## 📱 Features
+## 🔑 Default Staff Accounts
 
-### Dashboard Tab
-- Color-coded bar chart (🔴 weak / 🟡 moderate / 🟢 strong) per topic
-- Add progress entries (topic, platform, count)
-- Import from LeetCode by username (public GraphQL API)
-- Stats cards: total problems, weak/moderate/strong counts
-
-### Practice Tab
-- Generate MCQs for your weakest topic (or custom topic + difficulty)
-- 4-option multiple choice with labeled answer buttons
-- Reveal correct answer + step-by-step explanation
-- Session history with accuracy score
-
-### Mock Interview Tab
-- Toggle between **Technical** and **HR** mode
-- Chat UI: AI asks question → you type answer → AI evaluates
-- Score ring (0–10) with strengths, gaps, and model answer
-- Past session history with average score
-
-### My Plan Tab
-- Set your placement drive date
-- AI generates a day-by-day (≤14 days) or week-by-week plan
-- Colorful animated vertical timeline
-- Countdown timer showing days remaining
-
----
-
-## 🗄️ Data Model
-
-```sql
-students          (id, name, target_date, created_at)
-progress_entries  (id, student_id, topic, platform, problems_solved, date_added)
-practice_questions(id, student_id, topic, question, options, correct_answer, explanation, created_at)
-interview_sessions(id, student_id, mode, question, student_answer, score, strengths, gaps, better_answer, created_at)
-plans             (id, student_id, plan_json, generated_at)
-```
+| Role | Email | Password |
+|------|-------|----------|
+| Admin | admin@careerforge.ai | Admin@123 |
+| Placement Officer | placement@careerforge.ai | Placement@123 |
+| HOD | hod@careerforge.ai | HOD@123 |
+| Faculty | faculty@careerforge.ai | Faculty@123 |
 
 ---
 
@@ -99,28 +135,78 @@ plans             (id, student_id, plan_json, generated_at)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/students` | List all students |
-| POST | `/api/students` | Create student |
-| GET | `/api/progress/:studentId` | Get progress + analysis |
-| POST | `/api/progress/:studentId` | Add progress entry |
-| POST | `/api/progress/:studentId/import-leetcode` | Import from LeetCode |
-| POST | `/api/questions/:studentId/generate` | Generate MCQ (Gemini) |
-| POST | `/api/interview/:studentId/start` | Start interview session (Gemini) |
-| POST | `/api/interview/session/:id/answer` | Submit answer + get feedback (Gemini) |
-| POST | `/api/planner/:studentId/generate` | Generate study plan (Gemini) |
 | GET | `/api/health` | Server health check |
+| POST | `/api/auth/register` | Student / Staff registration |
+| POST | `/api/auth/login` | Authentication + JWT |
+| GET | `/api/students/:id` | Student profile |
+| GET | `/api/students/staff/analytics` | Staff dashboard data |
+| GET | `/api/students/staff/activity-feed` | Real-time activity feed |
+| POST | `/api/forgemind/:id/chat` | ForgeMind AI chat |
+| POST | `/api/resume/:id/upload` | Resume upload + ATS analysis |
+| POST | `/api/interview/:id/start` | Start mock interview |
+| POST | `/api/interview/session/:id/answer` | Submit interview answer |
+| POST | `/api/planner/:id/generate` | Generate study plan |
+| GET | `/api/opportunities/:id/saved` | Get opportunities |
+| POST | `/api/students/:id/preppilot-history` | Log coding solved problem |
+| GET | `/api/reports/download/csv` | Download CSV report |
+| GET | `/api/events` | SSE real-time event stream |
 
 ---
 
-## 🎯 Demo Walkthrough
+## 📊 Scoring Model
 
-1. Create a student profile → Dashboard
-2. Add progress: `Dynamic Programming: 5`, `Arrays: 30`, `Graph: 8`, `Sorting: 20`
-3. View the bar chart — DP and Graph show as red (weak)
-4. Practice tab → Generate Question → auto-selects DP (weakest) → answer MCQ
-5. Interview tab → Technical mode → Start → answer → see score card
-6. My Plan tab → set date 14 days out → Generate → see full timeline
+All scores are computed from **real student activity** logged in the database:
+
+| Score | Computed From |
+|-------|--------------|
+| **Resume Score** | ATS analysis of uploaded resume |
+| **Coding Score** | Problems solved, weighted by difficulty (Easy×1, Medium×2.5, Hard×5) |
+| **Interview Score** | Average AI score across mock interview sessions |
+| **Placement Readiness** | Weighted average: Resume×35% + Coding×45% + Interview×20% |
 
 ---
 
-*Built with ❤️ for placement season*
+## 📁 Project Structure
+
+```
+CareerForge_Ai/
+├── backend/
+│   ├── agents/          # AI agent modules (ForgeMind, Resume, Interview, etc.)
+│   ├── db/              # Database init, schema, helper functions
+│   ├── routes/          # Express API routes
+│   ├── server.js        # Entry point
+│   └── .env.example     # Environment variable template
+├── frontend/
+│   ├── src/
+│   │   ├── pages/       # React page components
+│   │   ├── components/  # Shared UI components
+│   │   └── api/         # API client helpers
+│   └── index.html
+└── README.md
+```
+
+---
+
+## ✅ QA Status
+
+All 17 automated integration tests pass with **100% pass rate**:
+
+- ✅ Server Health
+- ✅ Student Register + DB Verification
+- ✅ Student Login + JWT
+- ✅ Dashboard Profile Fetch
+- ✅ ForgeMind AI Chat + Memory
+- ✅ Resume Upload + ATS Scoring
+- ✅ Coding Problem Submit + Score
+- ✅ Mock Interview Start + Evaluate
+- ✅ Study Planner Generate + Store
+- ✅ Opportunities Discovery
+- ✅ Staff Login (Role: staff)
+- ✅ Staff Analytics + Roster
+- ✅ Real-Time Activity Feed (SSE)
+- ✅ ForgeMind Staff AI Profile Lookup
+- ✅ CSV Report Download
+
+---
+
+*Built with ❤️ for placement season — by Karthick Naveen S*
