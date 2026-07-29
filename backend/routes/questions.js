@@ -177,21 +177,105 @@ async function executeViaJudge0(endpointUrl, headers, sourceCode, langId, testCa
 import json, sys, inspect
 from typing import List, Dict, Tuple, Optional, Set, Any
 
+# ── Data Structure Serializers & Deserializers ─────────────────────────────
+class ListNode:
+    def __init__(self, val=0, next=None):
+        self.val = val
+        self.next = next
+
+class TreeNode:
+    def __init__(self, val=0, left=None, right=None):
+        self.val = val
+        self.left = left
+        self.right = right
+
+class Node:
+    def __init__(self, val=0, neighbors=None):
+        self.val = val
+        self.neighbors = neighbors if neighbors is not None else []
+
+def build_linked_list(arr):
+    if not isinstance(arr, list) or not arr:
+        return None
+    head = ListNode(arr[0])
+    curr = head
+    for v in arr[1:]:
+        curr.next = ListNode(v)
+        curr = curr.next
+    return head
+
+def linked_list_to_list(head):
+    res = []
+    curr = head
+    visited = set()
+    while curr and id(curr) not in visited:
+        visited.add(id(curr))
+        res.append(curr.val)
+        curr = curr.next
+    return res
+
+def build_binary_tree(arr):
+    if not isinstance(arr, list) or not arr:
+        return None
+    nodes = [TreeNode(v) if v is not None else None for v in arr]
+    kids = nodes[::-1]
+    root = kids.pop()
+    for node in nodes:
+        if node:
+            if kids: node.left = kids.pop()
+            if kids: node.right = kids.pop()
+    return root
+
+def binary_tree_to_list(root):
+    if not root:
+        return []
+    res, queue = [], [root]
+    while queue:
+        node = queue.pop(0)
+        if node:
+            res.append(node.val)
+            queue.append(node.left)
+            queue.append(node.right)
+        else:
+            res.append(None)
+    while res and res[-1] is None:
+        res.pop()
+    return res
+
+def transform_input_param(val, param_name=""):
+    name_lower = param_name.lower()
+    if isinstance(val, list):
+        # 1. Linked list detection: list of scalars (ints, strings) for head/node or default 1D list
+        is_flat_list = all(not isinstance(x, list) for x in val)
+        if is_flat_list and ("head" in name_lower or "list" in name_lower or "node" in name_lower or not name_lower or name_lower == "arg0"):
+            return build_linked_list(val)
+        if is_flat_list and ("root" in name_lower or "tree" in name_lower):
+            return build_binary_tree(val)
+    return val
+
+def transform_output_val(val):
+    if isinstance(val, ListNode):
+        return linked_list_to_list(val)
+    if isinstance(val, TreeNode):
+        return binary_tree_to_list(val)
+    return val
+
 ${cleanCode}
 
 # Dynamic function / class method detection
 target_fn = None
+HELPER_NAMES = {'ListNode', 'TreeNode', 'Node', 'build_linked_list', 'linked_list_to_list', 'build_binary_tree', 'binary_tree_to_list', 'transform_input_param', 'transform_output_val'}
 
 # 1. Standalone function check
 for name, obj in list(locals().items()):
-    if inspect.isfunction(obj) and obj.__module__ == '__main__':
+    if inspect.isfunction(obj) and obj.__module__ == '__main__' and name not in HELPER_NAMES:
         target_fn = obj
         break
 
 # 2. Class instance method fallback (e.g. class Solution)
 if not target_fn:
     for name, obj in list(locals().items()):
-        if inspect.isclass(obj) and obj.__module__ == '__main__':
+        if inspect.isclass(obj) and obj.__module__ == '__main__' and name not in HELPER_NAMES:
             try:
                 inst = obj()
                 for attr_name in dir(inst):
@@ -209,7 +293,8 @@ if not target_fn:
     raise RuntimeError("No executable target function found in code.")
 
 sig = inspect.signature(target_fn)
-param_count = len(sig.parameters)
+param_names = [p for p in sig.parameters.keys() if p != 'self']
+param_count = len(param_names)
 
 test_cases = ${JSON.stringify(testCases)}
 results = []
@@ -226,33 +311,32 @@ for idx, tc in enumerate(test_cases):
             except Exception:
                 parsed_val = raw_input
 
-        # Robust Argument Unpacking Engine:
-        # Handles 1..N parameters across lists, scalars, matrices, dicts, booleans, strings
+        # Smart Data Structure Param Transformation
         actual_val = None
+        if isinstance(parsed_val, list) and len(parsed_val) == 1 and isinstance(parsed_val[0], list) and param_count > 1:
+            parsed_val = parsed_val[0]
+
         if param_count == 1:
-            if isinstance(parsed_val, list) and len(parsed_val) == 1:
-                try:
-                    actual_val = target_fn(parsed_val[0])
-                except Exception:
-                    actual_val = target_fn(parsed_val)
-            else:
-                actual_val = target_fn(parsed_val)
+            val_to_pass = parsed_val[0] if (isinstance(parsed_val, list) and len(parsed_val) == 1) else parsed_val
+            pname = param_names[0] if param_names else ""
+            transformed_arg = transform_input_param(val_to_pass, pname)
+            actual_val = target_fn(transformed_arg)
         else:
             if isinstance(parsed_val, list) and len(parsed_val) == param_count:
-                actual_val = target_fn(*parsed_val)
+                transformed_args = [transform_input_param(arg, param_names[i] if i < len(param_names) else "") for i, arg in enumerate(parsed_val)]
+                actual_val = target_fn(*transformed_args)
             elif isinstance(parsed_val, dict):
-                try:
-                    actual_val = target_fn(**parsed_val)
-                except Exception:
-                    actual_val = target_fn(*parsed_val.values())
-            elif isinstance(parsed_val, list) and len(parsed_val) == 1 and isinstance(parsed_val[0], list) and len(parsed_val[0]) == param_count:
-                actual_val = target_fn(*parsed_val[0])
+                transformed_kwargs = {k: transform_input_param(v, k) for k, v in parsed_val.items()}
+                actual_val = target_fn(**transformed_kwargs)
             else:
                 try:
-                    actual_val = target_fn(*parsed_val)
+                    transformed_arg = transform_input_param(parsed_val, param_names[0] if param_names else "")
+                    actual_val = target_fn(transformed_arg)
                 except TypeError:
                     actual_val = target_fn(parsed_val)
 
+        # Transform output (ListNode/TreeNode back to Python lists)
+        actual_val = transform_output_val(actual_val)
         actual_str = json.dumps(actual_val) if actual_val is not None else "null"
         expected_str = str(tc.get('expectedOutput', '')).strip()
         try:

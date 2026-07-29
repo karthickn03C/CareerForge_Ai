@@ -402,20 +402,17 @@ export default function Practice({ student, theme }) {
                       onClick={() => !mcqSubmitted && setSelectedAnswer(opt)}
                       disabled={mcqSubmitted}
                     >
-                      <span style={{
-                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                        width: 26, height: 26, borderRadius: 8, background: '#EDF2F7',
-                        fontSize: 12, fontWeight: 700, marginRight: 12, flexShrink: 0,
-                        color: 'var(--text-secondary)',
-                      }}>
+                      <span className="mcq-option-letter">
                         {String.fromCharCode(65 + i)}
                       </span>
-                      {opt}
+                      <span className="mcq-option-text">
+                        {opt}
+                      </span>
                       {mcqSubmitted && opt === mcqQuestion.correctAnswer && (
-                        <CheckCircle size={18} color="#38A169" style={{ marginLeft: 'auto' }} />
+                        <CheckCircle size={18} color="#38A169" style={{ marginLeft: 'auto', flexShrink: 0 }} />
                       )}
                       {mcqSubmitted && opt === selectedAnswer && opt !== mcqQuestion.correctAnswer && (
-                        <XCircle size={18} color="#E53E3E" style={{ marginLeft: 'auto' }} />
+                        <XCircle size={18} color="#E53E3E" style={{ marginLeft: 'auto', flexShrink: 0 }} />
                       )}
                     </button>
                   );
@@ -712,48 +709,74 @@ export default function Practice({ student, theme }) {
 
                 {/* Test Results Output */}
                 {testResults && (
-                  <div className="card animate-slide-up" style={{ padding: 20 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                      <h4 style={{ fontSize: 14, fontWeight: 700 }}>Test Case Results</h4>
-                      <span style={{
-                        fontSize: 12, fontWeight: 700,
-                        color: testResults.every(r => r.passed) ? '#38A169' : '#E53E3E',
-                      }}>
-                        {testResults.filter(r => r.passed).length}/{testResults.length} Passed
+                  <div className="card animate-slide-up" style={{ padding: 20, border: '1px solid var(--border)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <h4 style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>Execution Output</h4>
+                        <span className="badge" style={{
+                          background: testResults.every(r => r.passed) ? 'rgba(56, 161, 105, 0.15)' : 'rgba(229, 62, 62, 0.15)',
+                          color: testResults.every(r => r.passed) ? '#38A169' : '#E53E3E',
+                          border: `1px solid ${testResults.every(r => r.passed) ? 'rgba(56, 161, 105, 0.3)' : 'rgba(229, 62, 62, 0.3)'}`,
+                          fontSize: 12, padding: '4px 10px', borderRadius: 8
+                        }}>
+                          {testResults.every(r => r.passed) ? 'Accepted' : 'Wrong Answer / Runtime Error'}
+                        </span>
+                      </div>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)' }}>
+                        Passed: <strong style={{ color: testResults.every(r => r.passed) ? '#38A169' : '#E53E3E' }}>{testResults.filter(r => r.passed).length}/{testResults.length}</strong>
                       </span>
                     </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {testResults.map((r, i) => (
-                        <div key={i} style={{
-                          padding: '10px 12px', borderRadius: 8,
-                          background: r.passed ? '#F0FFF4' : '#FFF5F5',
-                          border: `1px solid ${r.passed ? '#C6F6D5' : '#FED7D7'}`,
-                          fontSize: 12,
-                        }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, marginBottom: 4 }}>
-                            <span>Test Case {r.testIndex || i + 1}</span>
-                            <span style={{ color: r.passed ? '#276749' : '#C53030' }}>
-                              {r.passed ? '✓ PASSED' : '✕ FAILED'}
-                            </span>
-                          </div>
-                          {r.input && <div style={{ color: 'var(--text-secondary)' }}>Input: <span className="font-mono">{formatValue(r.input)}</span></div>}
-                          <div style={{ color: r.passed ? '#276749' : '#C53030' }}>
-                            Output: <span className="font-mono">{formatValue(r.actual)}</span>
-                          </div>
-                          {!r.passed && r.expected && (
-                            <div style={{ color: 'var(--text-secondary)' }}>
-                              Expected: <span className="font-mono">{formatValue(r.expected)}</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 280, overflowY: 'auto', paddingRight: 4 }}>
+                      {testResults.map((r, i) => {
+                        const isError = r.error || String(r.actual).includes('Runtime Error') || String(r.actual).includes('Error');
+                        const statusLabel = r.passed ? 'Passed' : isError ? 'Runtime Error' : 'Wrong Answer';
+                        const statusColor = r.passed ? '#38A169' : '#E53E3E';
+                        const bgColor = r.passed ? 'rgba(56, 161, 105, 0.08)' : 'rgba(229, 62, 62, 0.08)';
+                        const borderColor = r.passed ? 'rgba(56, 161, 105, 0.25)' : 'rgba(229, 62, 62, 0.25)';
+
+                        return (
+                          <div key={i} style={{
+                            padding: '12px 14px', borderRadius: 10,
+                            background: bgColor,
+                            border: `1px solid ${borderColor}`,
+                            fontSize: 13,
+                          }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, marginBottom: 6, alignItems: 'center' }}>
+                              <span style={{ color: 'var(--text-primary)' }}>Case {r.testIndex || i + 1}</span>
+                              <span style={{
+                                fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.5px',
+                                color: statusColor, padding: '2px 8px', borderRadius: 6,
+                                background: `${statusColor}18`, border: `1px solid ${statusColor}33`
+                              }}>
+                                {r.passed ? '✓ ' : '✕ '}{statusLabel}
+                              </span>
                             </div>
-                          )}
-                        </div>
-                      ))}
+
+                            {r.input && (
+                              <div style={{ marginBottom: 4, color: 'var(--text-secondary)' }}>
+                                <strong style={{ color: 'var(--text-primary)' }}>Input:</strong> <code style={{ background: 'var(--hover-bg)', padding: '2px 6px', borderRadius: 4, fontFamily: 'monospace' }}>{formatValue(r.input)}</code>
+                              </div>
+                            )}
+
+                            <div style={{ marginBottom: r.expected ? 4 : 0, color: statusColor }}>
+                              <strong style={{ color: 'var(--text-primary)' }}>Actual Output:</strong> <code style={{ background: 'var(--hover-bg)', padding: '2px 6px', borderRadius: 4, fontFamily: 'monospace', color: statusColor }}>{formatValue(r.actual)}</code>
+                            </div>
+
+                            {!r.passed && r.expected && (
+                              <div style={{ color: 'var(--text-secondary)' }}>
+                                <strong style={{ color: 'var(--text-primary)' }}>Expected:</strong> <code style={{ background: 'var(--hover-bg)', padding: '2px 6px', borderRadius: 4, fontFamily: 'monospace', color: '#38A169' }}>{formatValue(r.expected)}</code>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
 
                     {testResults.every(r => r.passed) && (
-                      <div style={{ marginTop: 16, textAlign: 'center' }}>
-                        <p style={{ fontSize: 14, fontWeight: 700, color: '#276749', marginBottom: 10 }}>
-                          🎉 All Test Cases Passed! Excellent Job!
+                      <div style={{ marginTop: 16, textAlign: 'center', paddingTop: 12, borderTop: '1px solid var(--border-color)' }}>
+                        <p style={{ fontSize: 14, fontWeight: 800, color: '#38A169', marginBottom: 10 }}>
+                          🎉 All Test Cases Passed! Ready for Next Challenge!
                         </p>
                         <button className="btn btn-primary btn-sm" onClick={() => handleGenerateCoding()}>
                           Next Coding Challenge →

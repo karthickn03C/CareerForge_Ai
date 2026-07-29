@@ -242,6 +242,69 @@ body {
   border-top-right-radius: 4px;
 }
 
+/* ── MCQ Option Flexbox Styling ──────────────────────────────────── */
+.mcq-option {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 14px 20px;
+  border-radius: 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.mcq-option:hover:not(:disabled) {
+  border-color: var(--primary);
+  background: var(--hover-bg);
+  transform: translateX(2px);
+}
+
+.mcq-option.selected {
+  border-color: var(--primary);
+  background: rgba(99, 102, 241, 0.12);
+  color: var(--primary);
+}
+
+.mcq-option.correct {
+  border-color: #38A169;
+  background: rgba(56, 161, 105, 0.12);
+  color: #276749;
+}
+
+.mcq-option.wrong {
+  border-color: #E53E3E;
+  background: rgba(229, 62, 62, 0.12);
+  color: #C53030;
+}
+
+.mcq-option-letter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  borderRadius: 8px;
+  background: var(--hover-bg);
+  border: 1px solid var(--border-color);
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.mcq-option-text {
+  flex: 1;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
 /* ── Alerts & Badges ─────────────────────────────────────────────── */
 .alert {
   padding: 12px 16px;
