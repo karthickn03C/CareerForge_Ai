@@ -87,6 +87,20 @@ router.post('/session/:sessionId/answer', async (req, res) => {
       ]
     );
 
+    // Update real-time student metrics in PostgreSQL
+    if (session.student_id) {
+      const newScore = evaluation.score || 80;
+      execute(
+        `UPDATE students SET 
+          interview_score = ?, 
+          study_hours = study_hours + 1,
+          placement_readiness = MIN(100, CAST((resume_score * 0.35 + coding_score * 0.45 + ? * 0.20) AS INTEGER)),
+          status = 'Active Now'
+         WHERE id = ?`,
+        [newScore, newScore, session.student_id]
+      );
+    }
+
     const updated = queryOne(
       'SELECT * FROM interview_sessions WHERE id = ?',
       [req.params.sessionId]

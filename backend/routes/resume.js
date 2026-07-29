@@ -173,6 +173,18 @@ router.post('/:studentId/upload', upload.single('resume'), async (req, res) => {
       [studentId, fileName, fileType, rawText, parsedJsonStr, atsScoresStr, feedbackStr]
     );
 
+    // Update real-time student record metrics
+    const overallAtsScore = atsResult?.atsScores?.overallScore || 85;
+    execute(
+      `UPDATE students SET 
+        resume_uploaded = 1, 
+        resume_score = ?, 
+        placement_readiness = MIN(100, CAST((? * 0.35 + coding_score * 0.45 + interview_score * 0.20) AS INTEGER)),
+        status = 'Active Now'
+       WHERE id = ? OR email = (SELECT email FROM users WHERE id = ?)`,
+      [overallAtsScore, overallAtsScore, studentId, studentId]
+    );
+
     res.status(201).json({
       id: result.lastInsertRowid,
       student_id: studentId,

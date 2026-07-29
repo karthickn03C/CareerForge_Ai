@@ -71,17 +71,24 @@ router.post('/register', async (req, res) => {
 
     const newUser = queryOne('SELECT id, name, email, role, created_at FROM users WHERE id = ?', [result.lastInsertRowid]);
 
-    // Insert or update corresponding student record WITH password & role
+    // Insert or update corresponding student record WITH all required PostgreSQL columns
     let student = queryOne('SELECT * FROM students WHERE email = ?', [normalizedEmail]);
     if (!student) {
       const sResult = execute(
-        'INSERT INTO students (name, email, password, role) VALUES (?, ?, ?, ?)',
+        `INSERT INTO students (
+          name, email, password, role, department, year, last_login,
+          resume_score, coding_score, interview_score, placement_readiness,
+          study_hours, problems_solved, current_streak, resume_uploaded,
+          planner_completed, profile_completion, status
+        ) VALUES (?, ?, ?, ?, 'CSE', '4th Year', datetime('now'), 0, 0, 0, 0, 0, 0, 0, 0, 0, 20, 'New Student')`,
         [name.trim(), normalizedEmail, hashedPassword, userRole]
       );
       student = queryOne('SELECT * FROM students WHERE id = ?', [sResult.lastInsertRowid]);
     } else {
       execute(
-        'UPDATE students SET password = ?, role = ? WHERE email = ?',
+        `UPDATE students SET 
+          password = ?, role = ?, last_login = datetime('now'), status = 'New Student'
+        WHERE email = ?`,
         [hashedPassword, userRole, normalizedEmail]
       );
       student = queryOne('SELECT * FROM students WHERE email = ?', [normalizedEmail]);
@@ -160,6 +167,11 @@ router.post('/login', async (req, res) => {
       );
       studentRecord = queryOne('SELECT * FROM students WHERE id = ?', [sResult.lastInsertRowid]);
     }
+
+    // Update last_login timestamp for real-time monitoring
+    execute("UPDATE students SET last_login = datetime('now'), status = 'Active Now' WHERE email = ?", [account.email]);
+
+    console.log(`[LOGIN ATTEMPT] SUCCESS - User: "${account.email}", Role: "${userRole}"`);
 
     // 5. Generate JWT token with verified role
     const token = jwt.sign(

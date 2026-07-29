@@ -36,8 +36,8 @@ export default function StaffDashboard({ authUser }) {
   const [drives, setDrives] = useState([]);
   const [newDrive, setNewDrive] = useState({ company: '', role: '', minScore: '80', deadline: '2026-08-15' });
 
-  async function loadData() {
-    setLoading(true);
+  async function loadData(showSpinner = false) {
+    if (showSpinner) setLoading(true);
     try {
       const res = await getStaffAnalytics();
       if (res.success) {
@@ -47,12 +47,17 @@ export default function StaffDashboard({ authUser }) {
     } catch (e) {
       console.warn('Staff analytics fetch note:', e);
     } finally {
-      setLoading(false);
+      if (showSpinner) setLoading(false);
     }
   }
 
   useEffect(() => {
-    loadData();
+    loadData(true);
+    // Real-Time Sync Polling every 10 seconds for live database monitoring
+    const interval = setInterval(() => {
+      loadData(false);
+    }, 10000);
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {

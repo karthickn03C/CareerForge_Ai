@@ -63,6 +63,16 @@ router.post('/:studentId/generate', async (req, res) => {
       [req.params.studentId, company || null, JSON.stringify(planData)]
     );
 
+    // Update real-time student planner metrics in PostgreSQL
+    execute(
+      `UPDATE students SET 
+        planner_completed = 1, 
+        profile_completion = MIN(100, profile_completion + 20),
+        status = 'Active Now'
+       WHERE id = ?`,
+      [req.params.studentId]
+    );
+
     if (target_date) {
       execute('UPDATE students SET target_date = ? WHERE id = ?', [target_date, req.params.studentId]);
     }

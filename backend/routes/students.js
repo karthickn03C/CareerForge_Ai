@@ -228,6 +228,19 @@ router.post('/:id/preppilot-history', (req, res) => {
     [id, title, topic, difficulty || 'medium', language || 'python']
   );
 
+  // Update real-time student coding metrics in PostgreSQL
+  execute(
+    `UPDATE students SET 
+      problems_solved = problems_solved + 1,
+      coding_score = MIN(98, coding_score + 2),
+      study_hours = study_hours + 1,
+      current_streak = current_streak + 1,
+      placement_readiness = MIN(100, CAST((resume_score * 0.35 + MIN(98, coding_score + 2) * 0.45 + interview_score * 0.20) AS INTEGER)),
+      status = 'Active Now'
+     WHERE id = ?`,
+    [id]
+  );
+
   const newEntry = queryOne(`SELECT * FROM preppilot_coding_history WHERE id = ?`, [result.lastInsertRowid]);
   res.status(201).json(newEntry);
 });
@@ -238,14 +251,15 @@ router.get('/staff/analytics', (req, res) => {
     const rawStudents = queryAll("SELECT * FROM students WHERE role != 'staff' OR role IS NULL ORDER BY created_at DESC");
     const students = rawStudents.slice(0, 10);
     const totalStudents = students.length;
-    const activeToday = Math.max(1, Math.round(totalStudents * 0.7));
+    const activeToday = students.filter(s => (s.status || '').includes('Active') || s.last_login).length || Math.min(totalStudents, 1);
     
-    const sampleDomains = ['gmail.com', 'yahoo.com', 'outlook.com', 'college.edu'];
-    const studentList = students.map((s, idx) => {
-      const resumeScore = Math.min(98, 65 + ((s.id * 7) % 32));
-      const codingScore = Math.min(96, 58 + ((s.id * 11) % 38));
-      const interviewScore = Math.min(95, 60 + ((s.id * 9) % 34));
-      const readinessScore = Math.round((resumeScore * 0.35) + (codingScore * 0.45) + (interviewScore * 0.20));
+    const sampleDomains = ['gmail.com', 'yahoo.com', 'outlook.com', 'student.sece.ac.in'];
+    const studentList = students.map((s) => {
+      const resumeScore = s.resume_score || 0;
+      const codingScore = s.coding_score || 0;
+      const interviewScore = s.interview_score || 0;
+      const calculatedReadiness = Math.round((resumeScore * 0.35) + (codingScore * 0.45) + (interviewScore * 0.20));
+      const readinessScore = s.placement_readiness || calculatedReadiness;
       const isAtRisk = readinessScore < 70;
       
       const fallbackDomain = sampleDomains[s.id % sampleDomains.length];
@@ -258,17 +272,20 @@ router.get('/staff/analytics', (req, res) => {
         id: s.id,
         name: s.name,
         email: studentEmail,
-        department: ['CSE', 'ECE', 'IT', 'AI & DS', 'EEE'][s.id % 5],
-        year: ['3rd Year', '4th Year', '4th Year', '3rd Year'][s.id % 4],
+        department: s.department || ['CSE', 'ECE', 'IT', 'AI & DS', 'EEE'][s.id % 5],
+        year: s.year || ['3rd Year', '4th Year', '4th Year', '3rd Year'][s.id % 4],
         leetcode_username: s.leetcode_username || 'Not Linked',
-        leetcode_total_solved: s.leetcode_total_solved || Math.floor(40 + ((s.id * 13) % 110)),
-        hoursPracticed: Math.floor(15 + ((s.id * 7) % 65)),
+        leetcode_total_solved: s.leetcode_total_solved || s.problems_solved || 0,
+        hoursPracticed: s.study_hours || 0,
+        problems_solved: s.problems_solved || 0,
+        current_streak: s.current_streak || 0,
         resumeScore,
         codingScore,
         interviewScore,
         readinessScore,
         isAtRisk,
-        status: idx % 3 === 0 ? 'Active Now' : 'Active 2h ago',
+        last_login: s.last_login || s.created_at || 'Just Now',
+        status: s.status || 'Active Now',
         aiRecommendation: isAtRisk 
           ? 'Needs immediate practice in Dynamic Programming & Resume ATS optimization.'
           : 'High readiness score! Recommended for Top Tier Tech Placement Drives.'

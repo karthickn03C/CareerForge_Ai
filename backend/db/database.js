@@ -82,6 +82,20 @@ function initializeSchema() {
   safeAddColumn('photo_url TEXT');
   safeAddColumn('leetcode_username TEXT');
   safeAddColumn('leetcode_total_solved INTEGER DEFAULT 0');
+  safeAddColumn('department TEXT DEFAULT \'CSE\'');
+  safeAddColumn('year TEXT DEFAULT \'4th Year\'');
+  safeAddColumn('last_login TEXT DEFAULT (datetime(\'now\'))');
+  safeAddColumn('resume_score INTEGER DEFAULT 0');
+  safeAddColumn('coding_score INTEGER DEFAULT 0');
+  safeAddColumn('interview_score INTEGER DEFAULT 0');
+  safeAddColumn('placement_readiness INTEGER DEFAULT 0');
+  safeAddColumn('study_hours INTEGER DEFAULT 0');
+  safeAddColumn('problems_solved INTEGER DEFAULT 0');
+  safeAddColumn('current_streak INTEGER DEFAULT 0');
+  safeAddColumn('resume_uploaded INTEGER DEFAULT 0');
+  safeAddColumn('planner_completed INTEGER DEFAULT 0');
+  safeAddColumn('profile_completion INTEGER DEFAULT 20');
+  safeAddColumn('status TEXT DEFAULT \'New Student\'');
 
   try { db.run(`ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'student';`); } catch (e) {}
 
