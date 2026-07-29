@@ -77,12 +77,13 @@ export default function App() {
   }
 
   function handleAuthSuccess(user, token) {
+    if (!user) return;
     setAuthUser(user);
-    if (user.studentId) {
-      loadStudentData(user.studentId);
-    } else {
-      setStudent({ id: user.id, name: user.name, email: user.email });
+    const targetStudentId = user.studentId || user.id;
+    if (targetStudentId) {
+      loadStudentData(targetStudentId);
     }
+    setStudent({ id: targetStudentId || 1, name: user.name || 'Candidate', email: user.email || '' });
     setViewState('dashboard');
   }
 
