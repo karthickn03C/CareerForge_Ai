@@ -49,14 +49,16 @@ router.post('/:studentId/generate', async (req, res) => {
   );
   const weakTopics = getWeakAndModerateTopics(entries);
 
-  if (weakTopics.length === 0) {
-    return res.status(400).json({
-      error: 'No weak or moderate topics found. Add progress entries first.',
-    });
-  }
+  // Use default topics for new students who haven't tracked progress yet
+  const effectiveTopics = weakTopics.length > 0 ? weakTopics : [
+    { topic: 'Arrays & Strings', status: 'weak' },
+    { topic: 'Dynamic Programming', status: 'weak' },
+    { topic: 'System Design', status: 'moderate' },
+    { topic: 'Database & SQL', status: 'moderate' }
+  ];
 
   try {
-    const planData = await generatePlan(weakTopics, daysRemaining, company);
+    const planData = await generatePlan(effectiveTopics, daysRemaining, company);
 
     const result = execute(
       'INSERT INTO plans (student_id, target_company, plan_json) VALUES (?, ?, ?)',
@@ -83,6 +85,7 @@ router.post('/:studentId/generate', async (req, res) => {
       ...saved,
       target_company: saved.target_company || company,
       plan_json: JSON.parse(saved.plan_json),
+      plan: JSON.parse(saved.plan_json),  // alias for frontend compatibility
       daysRemaining,
     });
   } catch (err) {

@@ -2,13 +2,102 @@ const express = require('express');
 const router = express.Router();
 const { queryAll, queryOne, execute, logActivity, recalculateStudentScores } = require('../db/database');
 
+// ── GET /api/students/staff/analytics ─────────────────────────────────────
+// MUST be defined before GET /:id to prevent route shadowing
+router.get('/staff/analytics', (req, res) => {
+  try {
+    const rawStudents = queryAll("SELECT * FROM students WHERE role != 'staff' OR role IS NULL ORDER BY created_at DESC");
+    const students = rawStudents;
+    const totalStudents = students.length;
+    const activeToday = students.filter(s => (s.status || '').includes('Active') || s.last_login).length || Math.min(totalStudents, 1);
+    
+    const sampleDomains = ['gmail.com', 'yahoo.com', 'outlook.com', 'student.sece.ac.in'];
+    const studentList = students.map((s) => {
+      const resumeScore = s.resume_score || 0;
+      const codingScore = s.coding_score || 0;
+      const interviewScore = s.interview_score || 0;
+      const calculatedReadiness = Math.round((resumeScore * 0.35) + (codingScore * 0.45) + (interviewScore * 0.20));
+      const readinessScore = s.placement_readiness || calculatedReadiness;
+      const isAtRisk = readinessScore < 70;
+      
+      const fallbackDomain = sampleDomains[s.id % sampleDomains.length];
+      const cleanName = (s.name || 'student').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const studentEmail = (s.email && !s.email.endsWith('@careerforge.ai'))
+        ? s.email 
+        : `${cleanName || 'student'}${s.id}@${fallbackDomain}`;
+
+      return {
+        id: s.id,
+        name: s.name,
+        email: studentEmail,
+        department: s.department || ['CSE', 'ECE', 'IT', 'AI & DS', 'EEE'][s.id % 5],
+        year: s.year || ['3rd Year', '4th Year', '4th Year', '3rd Year'][s.id % 4],
+        leetcode_username: s.leetcode_username || 'Not Linked',
+        leetcode_total_solved: s.leetcode_total_solved || s.problems_solved || 0,
+        hoursPracticed: s.study_hours || 0,
+        problems_solved: s.problems_solved || 0,
+        current_streak: s.current_streak || 0,
+        resumeScore,
+        codingScore,
+        interviewScore,
+        readinessScore,
+        isAtRisk,
+        last_login: s.last_login || s.created_at || 'Just Now',
+        status: s.status || 'Active Now',
+        aiRecommendation: isAtRisk 
+          ? 'Needs immediate practice in Dynamic Programming & Resume ATS optimization.'
+          : 'High readiness score! Recommended for Top Tier Tech Placement Drives.'
+      };
+    });
+
+    res.json({
+      success: true,
+      stats: {
+        totalStudents,
+        activeToday,
+        avgReadinessScore: Math.round(studentList.reduce((acc, s) => acc + s.readinessScore, 0) / (studentList.length || 1)),
+        studentsAtRisk: studentList.filter(s => s.isAtRisk).length,
+        eligibleForDrives: studentList.filter(s => s.readinessScore >= 75).length
+      },
+      students: studentList,
+      placementDrives: [
+        { id: 1, company: 'Google India', role: 'Software Development Engineer I', minScore: 85, eligibleCount: studentList.filter(s => s.readinessScore >= 85).length, status: 'Upcoming' },
+        { id: 2, company: 'Amazon Web Services', role: 'Cloud Support / Systems Engineer', minScore: 78, eligibleCount: studentList.filter(s => s.readinessScore >= 78).length, status: 'Active' },
+        { id: 3, company: 'Microsoft IDC', role: 'Associate Software Engineer', minScore: 80, eligibleCount: studentList.filter(s => s.readinessScore >= 80).length, status: 'Completed' }
+      ]
+    });
+  } catch (err) {
+    console.error('Staff analytics error:', err);
+    res.status(500).json({ error: 'Failed to generate staff analytics' });
+  }
+});
+
+// ── GET /api/students/staff/activity-feed ──────────────────────────────────
+// MUST be defined before GET /:id to prevent route shadowing
+router.get('/staff/activity-feed', (req, res) => {
+  try {
+    const activities = queryAll(
+      `SELECT sa.id, sa.student_id, sa.event_type, sa.description, sa.metadata, sa.created_at,
+              s.name as student_name, s.department
+       FROM student_activity sa
+       JOIN students s ON sa.student_id = s.id
+       WHERE s.role = 'student' OR s.role IS NULL
+       ORDER BY sa.created_at DESC LIMIT 50`
+    ).map(a => ({ ...a, metadata: a.metadata ? JSON.parse(a.metadata) : {} }));
+    res.json({ success: true, activities });
+  } catch (err) {
+    console.error('Activity feed error:', err);
+    res.status(500).json({ error: 'Failed to load activity feed' });
+  }
+});
+
 // GET all students
 router.get('/', (req, res) => {
   const students = queryAll('SELECT * FROM students ORDER BY created_at DESC');
   res.json(students);
 });
 
-// GET single student
+// GET single student — MUST come AFTER all specific named routes
 router.get('/:id', (req, res) => {
   const student = queryOne('SELECT * FROM students WHERE id = ?', [req.params.id]);
   if (!student) return res.status(404).json({ error: 'Student not found' });
@@ -243,74 +332,7 @@ router.post('/:id/preppilot-history', (req, res) => {
   res.status(201).json(newEntry);
 });
 
-// ── GET /api/students/staff/analytics ──────────────────────────────────────
-router.get('/staff/analytics', (req, res) => {
-  try {
-    const rawStudents = queryAll("SELECT * FROM students WHERE role != 'staff' OR role IS NULL ORDER BY created_at DESC");
-    const students = rawStudents.slice(0, 10);
-    const totalStudents = students.length;
-    const activeToday = students.filter(s => (s.status || '').includes('Active') || s.last_login).length || Math.min(totalStudents, 1);
-    
-    const sampleDomains = ['gmail.com', 'yahoo.com', 'outlook.com', 'student.sece.ac.in'];
-    const studentList = students.map((s) => {
-      const resumeScore = s.resume_score || 0;
-      const codingScore = s.coding_score || 0;
-      const interviewScore = s.interview_score || 0;
-      const calculatedReadiness = Math.round((resumeScore * 0.35) + (codingScore * 0.45) + (interviewScore * 0.20));
-      const readinessScore = s.placement_readiness || calculatedReadiness;
-      const isAtRisk = readinessScore < 70;
-      
-      const fallbackDomain = sampleDomains[s.id % sampleDomains.length];
-      const cleanName = s.name.toLowerCase().replace(/[^a-z0-9]/g, '');
-      const studentEmail = (s.email && !s.email.endsWith('@careerforge.ai'))
-        ? s.email 
-        : `${cleanName || 'student'}${s.id}@${fallbackDomain}`;
-
-      return {
-        id: s.id,
-        name: s.name,
-        email: studentEmail,
-        department: s.department || ['CSE', 'ECE', 'IT', 'AI & DS', 'EEE'][s.id % 5],
-        year: s.year || ['3rd Year', '4th Year', '4th Year', '3rd Year'][s.id % 4],
-        leetcode_username: s.leetcode_username || 'Not Linked',
-        leetcode_total_solved: s.leetcode_total_solved || s.problems_solved || 0,
-        hoursPracticed: s.study_hours || 0,
-        problems_solved: s.problems_solved || 0,
-        current_streak: s.current_streak || 0,
-        resumeScore,
-        codingScore,
-        interviewScore,
-        readinessScore,
-        isAtRisk,
-        last_login: s.last_login || s.created_at || 'Just Now',
-        status: s.status || 'Active Now',
-        aiRecommendation: isAtRisk 
-          ? 'Needs immediate practice in Dynamic Programming & Resume ATS optimization.'
-          : 'High readiness score! Recommended for Top Tier Tech Placement Drives.'
-      };
-    });
-
-    res.json({
-      success: true,
-      stats: {
-        totalStudents,
-        activeToday,
-        avgReadinessScore: Math.round(studentList.reduce((acc, s) => acc + s.readinessScore, 0) / (studentList.length || 1)),
-        studentsAtRisk: studentList.filter(s => s.isAtRisk).length,
-        eligibleForDrives: studentList.filter(s => s.readinessScore >= 75).length
-      },
-      students: studentList,
-      placementDrives: [
-        { id: 1, company: 'Google India', role: 'Software Development Engineer I', minScore: 85, eligibleCount: studentList.filter(s => s.readinessScore >= 85).length, status: 'Upcoming' },
-        { id: 2, company: 'Amazon Web Services', role: 'Cloud Support / Systems Engineer', minScore: 78, eligibleCount: studentList.filter(s => s.readinessScore >= 78).length, status: 'Active' },
-        { id: 3, company: 'Microsoft IDC', role: 'Associate Software Engineer', minScore: 80, eligibleCount: studentList.filter(s => s.readinessScore >= 80).length, status: 'Completed' }
-      ]
-    });
-  } catch (err) {
-    console.error('Staff analytics error:', err);
-    res.status(500).json({ error: 'Failed to generate staff analytics' });
-  }
-});
+// (Moved to top of file — staff routes must be before /:id)
 
 // ── GET /api/students/:id/full-profile ─────────────────────────────────────────
 // Returns complete student profile with activity, resume, coding, interview history
@@ -374,24 +396,7 @@ router.get('/:id/full-profile', (req, res) => {
   });
 });
 
-// ── GET /api/students/staff/activity-feed ──────────────────────────────────
-// Returns last 50 activity events across all non-staff students for Staff Portal feed
-router.get('/staff/activity-feed', (req, res) => {
-  try {
-    const activities = queryAll(
-      `SELECT sa.id, sa.student_id, sa.event_type, sa.description, sa.metadata, sa.created_at,
-              s.name as student_name, s.department
-       FROM student_activity sa
-       JOIN students s ON sa.student_id = s.id
-       WHERE s.role = 'student' OR s.role IS NULL
-       ORDER BY sa.created_at DESC LIMIT 50`
-    ).map(a => ({ ...a, metadata: a.metadata ? JSON.parse(a.metadata) : {} }));
-    res.json({ success: true, activities });
-  } catch (err) {
-    console.error('Activity feed error:', err);
-    res.status(500).json({ error: 'Failed to load activity feed' });
-  }
-});
+// (Moved to top of file — staff routes must be before /:id)
 
 // ── POST /api/students/:id/recalculate ───────────────────────────────────────
 // Force recalculate all scores for a student from raw activity data

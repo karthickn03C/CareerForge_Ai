@@ -41,8 +41,9 @@ router.post('/:studentId/start', async (req, res) => {
       [req.params.studentId, mode || 'technical', result.question]
     );
 
-    res.status(201).json({
+    res.status(200).json({
       id: inserted.lastInsertRowid,
+      sessionId: inserted.lastInsertRowid,
       student_id: parseInt(req.params.studentId),
       topic: targetTopic,
       mode: mode || 'technical',

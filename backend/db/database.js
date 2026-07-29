@@ -84,7 +84,8 @@ function initializeSchema() {
   safeAddColumn('leetcode_total_solved INTEGER DEFAULT 0');
   safeAddColumn('department TEXT DEFAULT \'CSE\'');
   safeAddColumn('year TEXT DEFAULT \'4th Year\'');
-  safeAddColumn('last_login TEXT DEFAULT (datetime(\'now\'))');
+  // NOTE: SQLite ALTER TABLE ADD COLUMN does NOT support DEFAULT (func()) — use static literal
+  safeAddColumn('last_login TEXT');
   safeAddColumn('resume_score INTEGER DEFAULT 0');
   safeAddColumn('coding_score INTEGER DEFAULT 0');
   safeAddColumn('interview_score INTEGER DEFAULT 0');
@@ -96,6 +97,7 @@ function initializeSchema() {
   safeAddColumn('planner_completed INTEGER DEFAULT 0');
   safeAddColumn('profile_completion INTEGER DEFAULT 20');
   safeAddColumn('status TEXT DEFAULT \'New Student\'');
+  safeAddColumn('target_date TEXT');
 
   try { db.run(`ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'student';`); } catch (e) {}
 

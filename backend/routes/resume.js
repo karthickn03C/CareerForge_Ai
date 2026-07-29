@@ -197,6 +197,7 @@ router.post('/:studentId/upload', upload.single('resume'), async (req, res) => {
       raw_text: rawText,
       parsed_json: parsedData,
       ats_scores: atsResult.atsScores,
+      atsScores: atsResult.atsScores,   // camelCase alias for frontend compatibility
       feedback_json: atsResult.feedback,
       uploaded_at: new Date().toISOString(),
     });

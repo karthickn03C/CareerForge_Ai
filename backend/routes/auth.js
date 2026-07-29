@@ -173,8 +173,13 @@ router.post('/login', async (req, res) => {
       studentRecord = queryOne('SELECT * FROM students WHERE id = ?', [sResult.lastInsertRowid]);
     }
 
-    // Update last_login timestamp for real-time monitoring
-    execute("UPDATE students SET last_login = datetime('now'), status = 'Active Now' WHERE email = ?", [account.email]);
+    // Update last_login timestamp for real-time monitoring (wrapped to handle missing column gracefully)
+    try {
+      execute("UPDATE students SET last_login = datetime('now'), status = 'Active Now' WHERE email = ?", [account.email]);
+    } catch (updateErr) {
+      // Column may not exist in older db — non-fatal, login still succeeds
+      console.warn('[Login] last_login update failed (non-fatal):', updateErr.message);
+    }
 
     console.log(`[LOGIN ATTEMPT] SUCCESS - User: "${account.email}", Role: "${userRole}"`);
 
