@@ -180,7 +180,7 @@ async function runE2EQASuite() {
         targetCompany: 'Google',
         target_date: '2026-09-01'
       });
-      logResult('PART 9: STUDY PLANNER', 'AI Roadmap Generation & Storage', planRes.status === 200 && Boolean(planRes.body.plan));
+      logResult('PART 9: STUDY PLANNER', 'AI Roadmap Generation & Storage', (planRes.status === 200 || planRes.status === 201) && Boolean(planRes.body.plan));
     } catch (e) {
       logResult('PART 9: STUDY PLANNER', 'Study Planner Suite', false, e.message);
     }

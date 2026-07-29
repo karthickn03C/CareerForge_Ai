@@ -55,7 +55,7 @@ async function generatePlan(weakTopics, daysRemaining, targetCompany = '') {
   const topicList = weakTopics
     .map(
       (t, i) =>
-        `${i + 1}. ${t.topic} — ${t.problems_solved} problems solved (${t.status})`
+        `${i + 1}. ${t.topic || t.topic} — ${t.problems_solved || 0} problems solved (${t.status || 'weak'})`
     )
     .join('\n');
 
@@ -67,32 +67,69 @@ Days remaining until placement drive: ${daysRemaining}
 
 Create a personalized study plan specifically weighted for target company: "${targetCompany || 'General Placement'}".`;
 
-  const completion = await groq.chat.completions.create({
-    model: 'llama-3.3-70b-versatile',
-    messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: prompt },
-    ],
-    temperature: 0.6,
-    max_tokens: 4096,
-    response_format: { type: 'json_object' },
-  });
+  // Multi-model fallback chain
+  const models = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'];
+  
+  for (const model of models) {
+    try {
+      const completion = await groq.chat.completions.create({
+        model,
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: prompt },
+        ],
+        temperature: 0.6,
+        max_tokens: 2048,
+        response_format: { type: 'json_object' },
+      });
 
-  const text = completion.choices[0]?.message?.content || '';
+      const text = completion.choices[0]?.message?.content || '';
+      let parsed;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        console.warn(`[plannerAgent] Model ${model} returned invalid JSON, trying next.`);
+        continue;
+      }
 
-  let parsed;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    throw new Error(`Planner Agent: Failed to parse JSON.\nRaw: ${text}`);
+      if (!Array.isArray(parsed.plan) || parsed.plan.length === 0) {
+        console.warn(`[plannerAgent] Model ${model} returned empty plan, trying next.`);
+        continue;
+      }
+
+      parsed.targetCompany = targetCompany || parsed.targetCompany || '';
+      console.log(`[plannerAgent] Plan generated with model: ${model}`);
+      return parsed;
+    } catch (err) {
+      console.warn(`[plannerAgent] Model ${model} failed: ${err.message?.substring(0, 80)}`);
+    }
   }
 
-  if (!Array.isArray(parsed.plan) || parsed.plan.length === 0) {
-    throw new Error('Planner Agent: No plan items returned from Groq.');
-  }
+  // Static fallback plan when all AI models fail (e.g., rate limit exceeded)
+  console.warn('[plannerAgent] All models failed. Returning static fallback plan.');
+  const isWeekly = daysRemaining > 14;
+  const planItems = weakTopics.slice(0, 4).map((t, i) => ({
+    day_or_week: isWeekly ? `Week ${i + 1}` : `Day ${i + 1}`,
+    focus_topic: t.topic || 'Core DSA',
+    tasks: [
+      `Review fundamentals of ${t.topic || 'core topic'}`,
+      'Solve 5 practice problems on LeetCode',
+      'Watch 1 video tutorial on the topic',
+      'Review solutions and note patterns'
+    ]
+  }));
 
-  parsed.targetCompany = targetCompany || parsed.targetCompany || '';
-  return parsed;
+  return {
+    planType: isWeekly ? 'weekly' : 'daily',
+    totalDays: daysRemaining,
+    targetCompany: targetCompany || 'General',
+    companyNote: 'AI-generated plan temporarily unavailable. Using default preparation framework.',
+    plan: planItems.length > 0 ? planItems : [{
+      day_or_week: 'Week 1',
+      focus_topic: 'Arrays & Strings',
+      tasks: ['Solve 10 Easy Array problems', 'Practice String manipulation', 'Review Big-O notation']
+    }]
+  };
 }
 
 module.exports = { generatePlan };
