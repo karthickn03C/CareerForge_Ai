@@ -10,56 +10,77 @@ class ApiService {
 
   static Map<String, String> get _headers {
     final headers = {'Content-Type': 'application/json'};
-    if (token != null) {
+    if (token != null && token!.isNotEmpty) {
       headers['Authorization'] = 'Bearer $token';
     }
     return headers;
   }
 
+  // Health check endpoint verification
+  static Future<bool> checkHealth() async {
+    final endpoint = '$baseUrl/health';
+    try {
+      print('[HTTP GET] Health Check: $endpoint');
+      final res = await http.get(Uri.parse(endpoint), headers: _headers).timeout(const Duration(seconds: 15));
+      print('[HTTP HEALTH] Endpoint: $endpoint | Status: ${res.statusCode} | Body: ${res.body}');
+      return res.statusCode == 200;
+    } catch (e) {
+      print('[HTTP HEALTH ERROR] Endpoint: $endpoint | Error: $e');
+      return false;
+    }
+  }
+
   // Silent background server warmup to wake up Render on app launch
   static void warmupServer() {
-    try {
-      http.get(Uri.parse('$baseUrl/health')).timeout(const Duration(seconds: 90)).then((_) {}).catchError((_) {});
-    } catch (_) {}
+    checkHealth();
   }
 
-  // Robust HTTP GET helper with timeout and retries for Render cold starts
-  static Future<http.Response> _get(String url, {int retries = 3}) async {
+  // Robust HTTP GET helper with exact logging
+  static Future<http.Response> _get(String url, {int retries = 2}) async {
+    print('[HTTP GET Request] $url');
     for (int i = 0; i <= retries; i++) {
       try {
-        return await http.get(Uri.parse(url), headers: _headers).timeout(const Duration(seconds: 90));
+        final response = await http.get(Uri.parse(url), headers: _headers).timeout(const Duration(seconds: 45));
+        print('[HTTP GET Response] Endpoint: $url | Status: ${response.statusCode}');
+        return response;
       } catch (e) {
+        print('[HTTP GET Error] Attempt ${i + 1}/${retries + 1} for $url | Error: $e');
         if (i == retries) rethrow;
         await Future.delayed(const Duration(seconds: 2));
       }
     }
-    throw Exception('Failed to reach $url');
+    throw Exception('Failed to reach $url after $retries retries.');
   }
 
-  // Robust HTTP POST helper with timeout and retries for Render cold starts
-  static Future<http.Response> _post(String url, Object? body, {int retries = 3}) async {
+  // Robust HTTP POST helper with exact logging
+  static Future<http.Response> _post(String url, Object? body, {int retries = 2}) async {
+    print('[HTTP POST Request] Endpoint: $url');
     for (int i = 0; i <= retries; i++) {
       try {
-        return await http
+        final response = await http
             .post(Uri.parse(url), headers: _headers, body: jsonEncode(body))
-            .timeout(const Duration(seconds: 90));
+            .timeout(const Duration(seconds: 45));
+        print('[HTTP POST Response] Endpoint: $url | Status: ${response.statusCode} | Body: ${response.body.length > 250 ? "${response.body.substring(0, 250)}..." : response.body}');
+        return response;
       } catch (e) {
+        print('[HTTP POST Error] Attempt ${i + 1}/${retries + 1} for $url | Error: $e');
         if (i == retries) rethrow;
         await Future.delayed(const Duration(seconds: 2));
       }
     }
-    throw Exception('Failed to reach $url');
+    throw Exception('Failed to reach $url after $retries retries.');
   }
 
   // ── Authentication ────────────────────────────────────────────────────────
   static Future<Map<String, dynamic>> login(String email, String password) async {
+    final endpoint = '$baseUrl/auth/login';
     try {
-      final response = await _post('$baseUrl/auth/login', {'email': email, 'password': password});
+      final response = await _post(endpoint, {'email': email, 'password': password});
       Map<String, dynamic> data = {};
       try {
         data = jsonDecode(response.body);
-      } catch (e) {
-        data = {'error': 'Invalid server response: ${response.body}'};
+      } catch (_) {
+        data = {'error': 'Invalid response from server (Status ${response.statusCode}): ${response.body}'};
       }
       if (response.statusCode == 200 && data['token'] != null) {
         token = data['token'];
@@ -67,16 +88,18 @@ class ApiService {
       }
       return {'status': response.statusCode, 'body': data};
     } catch (e) {
+      print('[LOGIN ERROR] Endpoint: $endpoint | Error: $e');
       return {
         'status': 500,
-        'body': {'error': 'Server connecting... Please retry in a few seconds while the backend initializes.'}
+        'body': {'error': 'Connection failed to $endpoint (Status: 500). Details: ${e.toString()}'}
       };
     }
   }
 
   static Future<Map<String, dynamic>> register(String name, String email, String password, String confirmPassword) async {
+    final endpoint = '$baseUrl/auth/register';
     try {
-      final response = await _post('$baseUrl/auth/register', {
+      final response = await _post(endpoint, {
         'name': name,
         'email': email,
         'password': password,
@@ -86,14 +109,15 @@ class ApiService {
       Map<String, dynamic> data = {};
       try {
         data = jsonDecode(response.body);
-      } catch (e) {
-        data = {'error': 'Invalid server response'};
+      } catch (_) {
+        data = {'error': 'Invalid response from server (Status ${response.statusCode}): ${response.body}'};
       }
       return {'status': response.statusCode, 'body': data};
     } catch (e) {
+      print('[REGISTER ERROR] Endpoint: $endpoint | Error: $e');
       return {
         'status': 500,
-        'body': {'error': 'Server connecting... Please retry in a few seconds.'}
+        'body': {'error': 'Connection failed to $endpoint (Status: 500). Details: ${e.toString()}'}
       };
     }
   }
