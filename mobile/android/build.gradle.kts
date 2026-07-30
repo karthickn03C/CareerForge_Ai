@@ -6,16 +6,13 @@ allprojects {
 }
 
 subprojects {
-    project.configurations.all {
-        resolutionStrategy.eachDependency {
-            if (requested.group == "com.android.support" || requested.group == "androidx.core") {
-                // Resolution strategy
+    subprojects.forEach { subproject ->
+        subproject.afterEvaluate {
+            if (subproject.plugins.hasPlugin("com.android.library") || subproject.plugins.hasPlugin("com.android.application")) {
+                val android = subproject.extensions.findByName("android") as? com.android.build.gradle.BaseExtension
+                android?.compileSdkVersion(36)
             }
         }
-    }
-    afterEvaluate {
-        val android = extensions.findByName("android") as? com.android.build.gradle.BaseExtension
-        android?.compileSdkVersion(36)
     }
 }
 
