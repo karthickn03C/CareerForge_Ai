@@ -16,11 +16,18 @@ class ApiService {
     return headers;
   }
 
+  // Silent background server warmup to wake up Render on app launch
+  static void warmupServer() {
+    try {
+      http.get(Uri.parse('$baseUrl/health')).timeout(const Duration(seconds: 90)).then((_) {}).catchError((_) {});
+    } catch (_) {}
+  }
+
   // Robust HTTP GET helper with timeout and retries for Render cold starts
-  static Future<http.Response> _get(String url, {int retries = 2}) async {
+  static Future<http.Response> _get(String url, {int retries = 3}) async {
     for (int i = 0; i <= retries; i++) {
       try {
-        return await http.get(Uri.parse(url), headers: _headers).timeout(const Duration(seconds: 45));
+        return await http.get(Uri.parse(url), headers: _headers).timeout(const Duration(seconds: 90));
       } catch (e) {
         if (i == retries) rethrow;
         await Future.delayed(const Duration(seconds: 2));
@@ -30,12 +37,12 @@ class ApiService {
   }
 
   // Robust HTTP POST helper with timeout and retries for Render cold starts
-  static Future<http.Response> _post(String url, Object? body, {int retries = 2}) async {
+  static Future<http.Response> _post(String url, Object? body, {int retries = 3}) async {
     for (int i = 0; i <= retries; i++) {
       try {
         return await http
             .post(Uri.parse(url), headers: _headers, body: jsonEncode(body))
-            .timeout(const Duration(seconds: 45));
+            .timeout(const Duration(seconds: 90));
       } catch (e) {
         if (i == retries) rethrow;
         await Future.delayed(const Duration(seconds: 2));

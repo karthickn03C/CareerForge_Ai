@@ -51,6 +51,12 @@ class _AuthScreenState extends State<AuthScreen> {
   bool _isLoading = false;
   String _errorMessage = '';
 
+  @override
+  void initState() {
+    super.initState();
+    ApiService.warmupServer();
+  }
+
   Future<void> _handleSubmit() async {
     final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
@@ -273,7 +279,14 @@ class _AuthScreenState extends State<AuthScreen> {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                     ),
                     child: _isLoading
-                        ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                        ? const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
+                              SizedBox(width: 10),
+                              Text('Connecting to Cloud...', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white)),
+                            ],
+                          )
                         : Text(
                             _isLogin ? (_role == 'staff' ? 'Sign In to Staff Portal' : 'Sign In to Student Dashboard') : 'Create Student Account',
                             style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white),
