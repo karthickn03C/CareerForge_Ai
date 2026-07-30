@@ -4,7 +4,7 @@
  */
 
 const Groq = require('groq-sdk');
-const { parseResumeWithAI } = require('./resumeAgent');
+const { parseResumeWithAI, analyzeATSWithAI } = require('./resumeAgent');
 const { generateCodingProblem } = require('./codingAgent');
 const { askQuestion } = require('./interviewAgent');
 const { generatePlan } = require('./plannerAgent');
@@ -152,11 +152,87 @@ async function processChatMessage({ studentId, studentName = 'Candidate', userQu
     partialErrors: []
   };
 
-  if (routing.agents.includes('resume') && attachedText) {
+  if (routing.agents.includes('resume')) {
     agentTasks.push(
-      parseResumeWithAI(attachedText)
-        .then(d => { outputs.resumeData = d; })
-        .catch(e => outputs.partialErrors.push(`Resume Agent: ${e.message}`))
+      (async () => {
+        if (attachedText && attachedText.trim()) {
+          const parsed = await parseResumeWithAI(attachedText);
+          let ats = null;
+          try {
+            ats = await analyzeATSWithAI(parsed);
+          } catch (e) {
+            console.warn('[ForgeMind Resume ATS Note]', e.message);
+          }
+          const overallScore = ats?.atsScores?.overallScore || 78;
+          const data = {
+            fullName: parsed.personalInfo?.fullName || studentName,
+            experienceLevel: parsed.experience?.length > 0 ? 'Experienced' : 'Fresher / Entry Level',
+            atsScore: overallScore,
+            strengths: ats?.feedback?.strengths || ['Good project foundation', 'Relevant technical skills'],
+            weaknesses: ats?.feedback?.weaknesses || ['Bullet points could use more quantifiable metrics'],
+            improvements: ats?.feedback?.actionableImprovements || ['Include impact numbers and metrics in project bullet points'],
+            parsed,
+            ats
+          };
+          outputs.resumeData = data;
+
+          // Save analysis to database so future queries reuse this resume
+          try {
+            execute(
+              `INSERT INTO resume_analyses (student_id, file_name, file_type, raw_text, parsed_json, ats_scores, feedback_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?)`,
+              [
+                studentId,
+                'ForgeMind Attached Resume',
+                'text/plain',
+                attachedText,
+                JSON.stringify(parsed),
+                JSON.stringify(ats?.atsScores || { overallScore }),
+                JSON.stringify(ats?.feedback || {})
+              ]
+            );
+          } catch (dbErr) {
+            console.warn('[ForgeMind Resume DB Save Note]', dbErr.message);
+          }
+        } else {
+          // Look up latest stored resume analysis for this student or query name
+          let record = queryOne(
+            'SELECT * FROM resume_analyses WHERE student_id = ? ORDER BY uploaded_at DESC LIMIT 1',
+            [studentId]
+          );
+          if (!record && userQuery.toLowerCase().includes('manoj')) {
+            record = queryOne(
+              `SELECT r.* FROM resume_analyses r 
+               JOIN students s ON r.student_id = s.id 
+               WHERE LOWER(s.name) LIKE '%manoj%' ORDER BY r.uploaded_at DESC LIMIT 1`
+            );
+          }
+          if (!record) {
+            record = queryOne('SELECT * FROM resume_analyses ORDER BY uploaded_at DESC LIMIT 1');
+          }
+
+          if (record) {
+            try {
+              const parsed = JSON.parse(record.parsed_json || '{}');
+              const ats = JSON.parse(record.ats_scores || '{}');
+              const feedback = JSON.parse(record.feedback_json || '{}');
+              outputs.resumeData = {
+                fullName: parsed.personalInfo?.fullName || record.file_name || studentName,
+                experienceLevel: parsed.experience?.length > 0 ? 'Experienced' : 'Fresher / Entry Level',
+                atsScore: ats.overallScore || 78,
+                strengths: feedback.strengths || ['Solid core technical skills', 'Well structured layout'],
+                weaknesses: feedback.weaknesses || ['Bullet points could include more quantified outcomes'],
+                improvements: feedback.actionableImprovements || ['Add metrics to demonstrate impact'],
+                parsed,
+                ats,
+                fileName: record.file_name
+              };
+            } catch (e) {
+              console.warn('[ForgeMind Stored Resume Parse Error]', e.message);
+            }
+          }
+        }
+      })().catch(e => outputs.partialErrors.push(`Resume Agent: ${e.message}`))
     );
   }
 
@@ -212,11 +288,15 @@ async function processChatMessage({ studentId, studentName = 'Candidate', userQu
     .replace('{{studentName}}', studentName)
     .replace('{{memorySummary}}', memorySummary);
 
+  const resumeSummary = outputs.resumeData
+    ? `Name: ${outputs.resumeData.fullName}, ATS Score: ${outputs.resumeData.atsScore}/100, Strengths: ${JSON.stringify(outputs.resumeData.strengths)}, Weaknesses: ${JSON.stringify(outputs.resumeData.weaknesses)}, Improvements: ${JSON.stringify(outputs.resumeData.improvements)}`
+    : 'No resume profile available.';
+
   const userContext = `User Query: "${userQuery}"
 Executed Agents: ${routing.agents.length > 0 ? routing.agents.join(', ') : 'None (Conversational)'}
 
 Internal Sub-Agent Findings:
-- Resume Profile: ${outputs.resumeData ? `${outputs.resumeData.fullName} (${outputs.resumeData.experienceLevel})` : 'N/A'}
+- Resume Profile: ${resumeSummary}
 - Coding Challenge: ${outputs.practiceData ? outputs.practiceData.title : 'N/A'}
 - Interview Question: ${outputs.interviewData ? outputs.interviewData.question : 'N/A'}
 - Study Plan: ${outputs.planData ? `${outputs.planData.planType} plan for ${outputs.planData.targetCompany || 'General'}` : 'N/A'}

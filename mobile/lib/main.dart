@@ -105,7 +105,7 @@ class _AuthScreenState extends State<AuthScreen> {
         }
       }
     } catch (e) {
-      setState(() => _errorMessage = 'Connection error. Check your network or API endpoint.');
+      setState(() => _errorMessage = 'Unable to connect to server: ${e.toString()}');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

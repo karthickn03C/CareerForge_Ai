@@ -327,6 +327,29 @@ async function seedStaffAccounts() {
     }
   }
 
+  // Seed Manoj & student demo accounts
+  const defaultStudents = [
+    { name: 'Manoj V', email: 'manoj@gmail.com', pass: 'Password123' },
+    { name: 'Manoj V', email: 'manoj@careerforge.ai', pass: 'Password123' },
+    { name: 'Demo Student', email: 'student@careerforge.ai', pass: 'Student@123' }
+  ];
+
+  for (const st of defaultStudents) {
+    const hashedPassword = bcrypt.hashSync(st.pass, 10);
+    const existingUser = queryOne('SELECT * FROM users WHERE email = ?', [st.email]);
+    if (!existingUser) {
+      execute('INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)', [st.name, st.email, hashedPassword, 'student']);
+    } else {
+      execute('UPDATE users SET password = ? WHERE email = ?', [hashedPassword, st.email]);
+    }
+    const existingStudent = queryOne('SELECT * FROM students WHERE email = ?', [st.email]);
+    if (!existingStudent) {
+      execute('INSERT INTO students (name, email, password, role) VALUES (?, ?, ?, ?)', [st.name, st.email, hashedPassword, 'student']);
+    } else {
+      execute('UPDATE students SET password = ? WHERE email = ?', [hashedPassword, st.email]);
+    }
+  }
+
   // Verification log check
   const staffList = queryAll("SELECT email, role FROM students WHERE role = 'staff'");
   console.log('✅ Staff Accounts Verification in students table:', staffList);

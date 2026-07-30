@@ -46,24 +46,49 @@ class ApiService {
 
   // ── Authentication ────────────────────────────────────────────────────────
   static Future<Map<String, dynamic>> login(String email, String password) async {
-    final response = await _post('$baseUrl/auth/login', {'email': email, 'password': password});
-    final data = jsonDecode(response.body);
-    if (response.statusCode == 200 && data['token'] != null) {
-      token = data['token'];
-      currentUser = data['user'];
+    try {
+      final response = await _post('$baseUrl/auth/login', {'email': email, 'password': password});
+      Map<String, dynamic> data = {};
+      try {
+        data = jsonDecode(response.body);
+      } catch (e) {
+        data = {'error': 'Invalid server response: ${response.body}'};
+      }
+      if (response.statusCode == 200 && data['token'] != null) {
+        token = data['token'];
+        currentUser = data['user'];
+      }
+      return {'status': response.statusCode, 'body': data};
+    } catch (e) {
+      return {
+        'status': 500,
+        'body': {'error': 'Server connecting... Please retry in a few seconds while the backend initializes.'}
+      };
     }
-    return {'status': response.statusCode, 'body': data};
   }
 
   static Future<Map<String, dynamic>> register(String name, String email, String password, String confirmPassword) async {
-    final response = await _post('$baseUrl/auth/register', {
-      'name': name,
-      'email': email,
-      'password': password,
-      'confirmPassword': confirmPassword,
-      'role': 'student',
-    });
-    return {'status': response.statusCode, 'body': jsonDecode(response.body)};
+    try {
+      final response = await _post('$baseUrl/auth/register', {
+        'name': name,
+        'email': email,
+        'password': password,
+        'confirmPassword': confirmPassword,
+        'role': 'student',
+      });
+      Map<String, dynamic> data = {};
+      try {
+        data = jsonDecode(response.body);
+      } catch (e) {
+        data = {'error': 'Invalid server response'};
+      }
+      return {'status': response.statusCode, 'body': data};
+    } catch (e) {
+      return {
+        'status': 500,
+        'body': {'error': 'Server connecting... Please retry in a few seconds.'}
+      };
+    }
   }
 
   // ── Student Dashboard & Profile ─────────────────────────────────────────
