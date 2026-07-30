@@ -182,4 +182,141 @@ router.get('/department', (req, res) => {
   }
 });
 
+// ── PDF GENERATION HELPER ──────────────────────────────────────────────────
+const PDFDocument = require('pdfkit');
+
+function buildPdfReport(res, { title, subtitle, sections, studentName, dateStr }) {
+  const doc = new PDFDocument({ margin: 40, size: 'A4' });
+  const filename = `CareerForge_${title.replace(/[^a-zA-Z0-9]/g, '_')}_${Date.now()}.pdf`;
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  doc.pipe(res);
+
+  // Header Banner
+  doc.rect(0, 0, 595.28, 80).fill('#1E1B4B');
+  doc.fillColor('#FFFFFF').fontSize(22).font('Helvetica-Bold').text('CareerForge AI', 40, 20);
+  doc.fontSize(12).font('Helvetica').text('AI Placement Command Center Report', 40, 48);
+  doc.fontSize(9).text(`Generated: ${dateStr || new Date().toLocaleString()}`, 400, 48, { align: 'right' });
+
+  doc.moveDown(3);
+  doc.fillColor('#1F2937').fontSize(18).font('Helvetica-Bold').text(title, 40, 100);
+  if (subtitle) {
+    doc.fontSize(11).font('Helvetica-Oblique').fillColor('#4B5563').text(subtitle, 40, 125);
+  }
+  if (studentName) {
+    doc.fontSize(10).font('Helvetica-Bold').fillColor('#4F46E5').text(`Student: ${studentName}`, 40, 142);
+  }
+
+  doc.moveDown(2);
+  let currentY = studentName ? 165 : 145;
+
+  (sections || []).forEach(sec => {
+    if (currentY > 700) {
+      doc.addPage();
+      currentY = 40;
+    }
+    doc.fontSize(14).font('Helvetica-Bold').fillColor('#1E1B4B').text(sec.heading, 40, currentY);
+    currentY += 20;
+
+    if (sec.content) {
+      doc.fontSize(10).font('Helvetica').fillColor('#374151').text(sec.content, 40, currentY, { width: 515, align: 'justify' });
+      currentY += doc.heightOfString(sec.content, { width: 515 }) + 10;
+    }
+
+    if (Array.isArray(sec.items)) {
+      sec.items.forEach(item => {
+        if (currentY > 720) {
+          doc.addPage();
+          currentY = 40;
+        }
+        doc.fontSize(10).font('Helvetica').fillColor('#4F46E5').text('• ', 45, currentY);
+        doc.fillColor('#1F2937').text(item, 55, currentY, { width: 500 });
+        currentY += doc.heightOfString(item, { width: 500 }) + 6;
+      });
+      currentY += 8;
+    }
+  });
+
+  // Footer
+  doc.fontSize(8).fillColor('#9CA3AF').text('CareerForge AI Platform — Confidential & Proprietary Report', 40, 800, { align: 'center' });
+
+  doc.end();
+}
+
+// ── POST /api/reports/generate-pdf ─────────────────────────────────────────
+router.post('/generate-pdf', (req, res) => {
+  try {
+    const { reportType, studentId, customTitle, customContent } = req.body;
+    let student = null;
+    if (studentId) {
+      student = queryOne('SELECT * FROM students WHERE id = ?', [studentId]);
+    }
+
+    let title = customTitle || 'Placement Performance Report';
+    let subtitle = 'CareerForge AI Placement Intelligence';
+    let sections = [];
+    const dateStr = new Date().toLocaleString();
+    const studentName = student ? student.name : (req.body.studentName || 'Student');
+
+    switch ((reportType || '').toLowerCase()) {
+      case 'resume':
+      case 'resume_analysis':
+        title = 'Resume ATS & Skills Analysis Report';
+        subtitle = 'Automated Evaluation & Keyword Gap Analysis';
+        sections = [
+          { heading: 'Overview', content: `ATS Score: ${student?.resume_score || 75}/100\nStatus: ${student?.resume_uploaded ? 'Uploaded & Analyzed' : 'Pending Upload'}` },
+          { heading: 'Key Strengths', items: ['Strong technical project highlights', 'Clean structural formatting', 'Clear education credentials'] },
+          { heading: 'Areas for Improvement', items: ['Add measurable outcome metrics (e.g. %, $)', 'Include missing industry keywords (Docker, AWS, Microservices)', 'Expand on role responsibilities'] }
+        ];
+        break;
+
+      case 'progress':
+      case 'coding':
+        title = 'Coding & DSA Progress Report';
+        subtitle = 'Performance Tracking & Topic Mastery';
+        sections = [
+          { heading: 'Performance Summary', content: `Total Problems Solved: ${student?.problems_solved || 0}\nCoding Score: ${student?.coding_score || 0}/100\nCurrent Streak: ${student?.current_streak || 0} Days\nStudy Hours: ${student?.study_hours || 0} Hours` },
+          { heading: 'Topic Breakdown', items: ['Arrays & Strings: Strong', 'Dynamic Programming: Weak (Action Required)', 'SQL & Databases: Moderate', 'System Design: Moderate'] }
+        ];
+        break;
+
+      case 'interview':
+        title = 'Mock Interview Evaluation Report';
+        subtitle = 'Technical & Behavioral Performance Breakdown';
+        sections = [
+          { heading: 'Interview Score Summary', content: `Overall Score: ${student?.interview_score || 0}/100\nReadiness Level: ${student?.placement_readiness || 0}%` },
+          { heading: 'Evaluated Competencies', items: ['Technical Problem Solving: Good', 'Communication Clarity: Excellent', 'System Architecture Knowledge: Needs Practice'] }
+        ];
+        break;
+
+      case 'plan':
+      case 'study_plan':
+        title = 'Personalized Study Roadmap';
+        subtitle = 'AI-Generated Placement Strategy Plan';
+        sections = [
+          { heading: 'Target Goals', content: `Placement Target Date: ${student?.target_date || 'Upcoming Drive'}\nCurrent Readiness: ${student?.placement_readiness || 0}%` },
+          { heading: 'Recommended Daily Schedule', items: ['Day 1-3: Intensive Dynamic Programming & Graph Theory', 'Day 4-7: Mock Interviews & System Design Concepts', 'Day 8-14: Aptitude Tests & Company Specific Previous Papers'] }
+        ];
+        break;
+
+      default:
+        title = customTitle || 'Placement Readiness Report';
+        subtitle = 'Comprehensive Candidate Assessment';
+        sections = [
+          { heading: 'Student Overview', content: `Name: ${studentName}\nEmail: ${student?.email || 'N/A'}\nDepartment: ${student?.department || 'CSE'}\nReadiness Score: ${student?.placement_readiness || 0}%` },
+          { heading: 'Score Breakdown', items: [`Resume Score: ${student?.resume_score || 0}/100`, `Coding Score: ${student?.coding_score || 0}/100`, `Interview Score: ${student?.interview_score || 0}/100`] },
+          { heading: 'Custom Insights', content: customContent || 'The candidate has demonstrated strong dedication across coding practice and mock interviews. Continued practice on weak topics is recommended before top-tier placement drives.' }
+        ];
+        break;
+    }
+
+    buildPdfReport(res, { title, subtitle, sections, studentName, dateStr });
+  } catch (err) {
+    console.error('PDF generation error:', err);
+    res.status(500).json({ error: 'Failed to generate PDF report' });
+  }
+});
+
 module.exports = router;
+

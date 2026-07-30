@@ -4,6 +4,8 @@ import { generateQuestion, generateCodingProblem, getCodingHint, executeCode, ge
 import { Sparkles, CheckCircle, XCircle, BookOpen, Code2, HelpCircle, Play, Lightbulb, Award, ChevronRight, Terminal, BookMarked, Copy, Check } from 'lucide-react';
 
 const TOPICS = [
+  'Aptitude', 'Programming', 'DBMS', 'OS', 'CN', 'OOP', 'SQL',
+  'Java', 'Python', 'JavaScript', 'C', 'C++', 'DSA',
   'Arrays', 'Strings', 'Linked List', 'Stack', 'Queue', 'Hash Table',
   'Binary Search', 'Sorting', 'Dynamic Programming', 'Graph', 'Tree',
   'Recursion', 'Backtracking', 'Greedy', 'Heap', 'Two Pointers',
@@ -14,6 +16,8 @@ const LANGUAGES = [
   { id: 'python', name: 'Python', monaco: 'python' },
   { id: 'java', name: 'Java', monaco: 'java' },
   { id: 'cpp', name: 'C++', monaco: 'cpp' },
+  { id: 'javascript', name: 'JavaScript', monaco: 'javascript' },
+  { id: 'c', name: 'C', monaco: 'c' },
 ];
 
 const DIFFICULTY_COLORS = {
