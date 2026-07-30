@@ -5,6 +5,15 @@ allprojects {
     }
 }
 
+gradle.beforeProject {
+    if (this.name != "app") {
+        this.plugins.withId("com.android.library") {
+            val android = this@beforeProject.extensions.findByName("android") as? com.android.build.gradle.BaseExtension
+            android?.compileSdkVersion(36)
+        }
+    }
+}
+
 val newBuildDir: Directory =
     rootProject.layout.buildDirectory
         .dir("../../build")
