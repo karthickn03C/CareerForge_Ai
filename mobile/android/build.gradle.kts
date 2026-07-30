@@ -6,11 +6,16 @@ allprojects {
 }
 
 subprojects {
-    afterEvaluate {
-        if (plugins.hasPlugin("com.android.library") || plugins.hasPlugin("com.android.application")) {
-            val android = extensions.findByType(com.android.build.gradle.BaseExtension::class.java)
-            android?.compileSdkVersion(36)
+    project.configurations.all {
+        resolutionStrategy.eachDependency {
+            if (requested.group == "com.android.support" || requested.group == "androidx.core") {
+                // Resolution strategy
+            }
         }
+    }
+    afterEvaluate {
+        val android = extensions.findByName("android") as? com.android.build.gradle.BaseExtension
+        android?.compileSdkVersion(36)
     }
 }
 
