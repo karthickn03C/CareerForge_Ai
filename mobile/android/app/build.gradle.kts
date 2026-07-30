@@ -34,13 +34,6 @@ android {
     }
 }
 
-subprojects {
-    afterEvaluate {
-        val android = extensions.findByName("android") as? com.android.build.gradle.BaseExtension
-        android?.compileSdkVersion(36)
-    }
-}
-
 kotlin {
     compilerOptions {
         jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
