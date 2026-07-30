@@ -5,10 +5,10 @@ allprojects {
     }
 }
 
-gradle.beforeProject {
-    if (this.name != "app") {
-        this.plugins.withId("com.android.library") {
-            val android = this@beforeProject.extensions.findByName("android") as? com.android.build.gradle.BaseExtension
+subprojects {
+    afterEvaluate {
+        if (plugins.hasPlugin("com.android.library") || plugins.hasPlugin("com.android.application")) {
+            val android = extensions.findByType(com.android.build.gradle.BaseExtension::class.java)
             android?.compileSdkVersion(36)
         }
     }
