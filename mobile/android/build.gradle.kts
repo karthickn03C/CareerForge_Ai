@@ -19,6 +19,25 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
+subprojects {
+    project.configurations.all {
+        resolutionStrategy.eachDependency {
+            if (requested.group == "com.android.support" || requested.group == "androidx.core") {
+                // Keep subprojects compatible with SDK 36
+            }
+        }
+    }
+}
+
+subprojects {
+    plugins.whenPluginAdded {
+        if (this is com.android.build.gradle.AppPlugin || this is com.android.build.gradle.LibraryPlugin) {
+            val android = project.extensions.getByName("android") as com.android.build.gradle.BaseExtension
+            android.compileSdkVersion(36)
+        }
+    }
+}
+
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }
