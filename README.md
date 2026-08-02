@@ -9,13 +9,29 @@
 
 ---
 
-## 🌐 Live Demo
+## 🌐 Live Demo & Mobile App
 
-| Service | URL |
-|---------|-----|
-| **Frontend (Vercel)** | https://career-forge-ai-git-main-karthickn03cs-projects.vercel.app |
+| Service / Download | Link / Location |
+|--------------------|-----------------|
+| **Frontend Web App (Vercel)** | https://career-forge-ai-git-main-karthickn03cs-projects.vercel.app |
 | **Backend API (Render)** | https://careerforge-ai-2bbv.onrender.com/api |
+| **📱 Android APK Direct Download** | [**CareerForge_AI_v1.0_Release.apk**](./apk_download/CareerForge_AI_v1.0_Release.apk) |
+| **📱 Alternative Root APK** | [**CareerForge_AI.apk**](./CareerForge_AI.apk) |
 | **Health Check** | https://careerforge-ai-2bbv.onrender.com/api/health |
+
+---
+
+## 📱 Android Mobile Application (APK)
+
+You can download and install the official **CareerForge AI Android App** directly from this repository:
+
+- 📦 **Download APK File**: [`apk_download/CareerForge_AI_v1.0_Release.apk`](./apk_download/CareerForge_AI_v1.0_Release.apk) (**50.5 MB**)
+- 🔗 **Direct Repository Download**: [`CareerForge_AI.apk`](./CareerForge_AI.apk)
+
+### Features included in Mobile App:
+- ✅ **Full Parity with Web App**: Student Login, Registration, ForgeMind AI, Resume Analyzer, Coding Practice, Mock Interview, Study Planner, and Opportunity Discovery.
+- ✅ **Automatic Server Pre-Warmup**: Silently wakes up Render backend on app startup for instantaneous login responses.
+- ✅ **Native Android Build**: Includes explicit `INTERNET` and `ACCESS_NETWORK_STATE` permissions.
 
 ---
 
